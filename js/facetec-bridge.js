@@ -31,6 +31,10 @@
 
   // ---------- frame capture ----------
 
+  // Default brightness/contrast boost applied to every capture. Keeps dim
+  // rooms from killing face detection without overcooking a well-lit image.
+  const IMG_FILTER = 'brightness(1.12) contrast(1.08)';
+
   const captureFrame = (video, maxSize = 480) => {
     if (!video || !video.videoWidth) return null;
     const w = video.videoWidth, h = video.videoHeight;
@@ -39,12 +43,31 @@
     const canvas = document.createElement('canvas');
     canvas.width = cw; canvas.height = ch;
     const ctx = canvas.getContext('2d');
+    try { ctx.filter = IMG_FILTER; } catch {}
     // un-mirror: browsers apply CSS mirror but raw video pixels aren't flipped,
     // match preview to what the user sees
     ctx.translate(cw, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, cw, ch);
     return canvas.toDataURL('image/jpeg', 0.82);
+  };
+
+  // Capture the full rectangular camera frame — no center-cropping at all.
+  // Lets FaceTec's face detector scan the whole viewport; useful when the
+  // user is sitting well back from the camera.
+  const captureFullFrame = (video, maxSize = 640) => {
+    if (!video || !video.videoWidth) return null;
+    const w = video.videoWidth, h = video.videoHeight;
+    const scale = Math.min(1, maxSize / Math.max(w, h));
+    const cw = Math.round(w * scale), ch = Math.round(h * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    try { ctx.filter = IMG_FILTER; } catch {}
+    ctx.translate(cw, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, cw, ch);
+    return canvas.toDataURL('image/jpeg', 0.85);
   };
 
   // Center-crop at a specific zoom level so users at different distances
@@ -68,10 +91,50 @@
     const canvas = document.createElement('canvas');
     canvas.width = outSize; canvas.height = outSize;
     const ctx = canvas.getContext('2d');
+    try { ctx.filter = IMG_FILTER; } catch {}
     ctx.translate(outSize, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, cropSide, cropSide, 0, 0, outSize, outSize);
     return canvas.toDataURL('image/jpeg', 0.82);
+  };
+
+  // Best-effort: use FaceDetector's bounding box to center + zoom onto the
+  // face with generous padding, so a user 6+ feet from the camera still
+  // gets a large, clear face in the frame sent to FaceTec. Falls back to
+  // the full-frame capture if FaceDetector is unavailable or finds no face.
+  const captureAroundFace = async (video, maxSize = 480) => {
+    if (!video || !video.videoWidth) return null;
+    const fd = getFaceDetector();
+    if (!fd) return captureFullFrame(video, maxSize);
+    let faces = [];
+    try { faces = await fd.detect(video); } catch {}
+    if (!faces.length) return captureFullFrame(video, maxSize);
+    const bb = faces[0].boundingBox;
+    const vw = video.videoWidth, vh = video.videoHeight;
+
+    // Padding around the face bbox so the chin/forehead/ears aren't clipped.
+    const padX = bb.width  * 0.7;
+    const padY = bb.height * 0.7;
+    let sx = Math.max(0, bb.x - padX);
+    let sy = Math.max(0, bb.y - padY);
+    let sw = Math.min(vw - sx, bb.width  + 2 * padX);
+    let sh = Math.min(vh - sy, bb.height + 2 * padY);
+    // Square up around the face center so the output aspect stays 1:1.
+    const side = Math.min(vw, vh, Math.max(sw, sh));
+    const cx = sx + sw / 2, cy = sy + sh / 2;
+    sx = Math.max(0, Math.min(vw - side, cx - side / 2));
+    sy = Math.max(0, Math.min(vh - side, cy - side / 2));
+    sw = side; sh = side;
+
+    const out = Math.min(maxSize, Math.round(side));
+    const canvas = document.createElement('canvas');
+    canvas.width = out; canvas.height = out;
+    const ctx = canvas.getContext('2d');
+    try { ctx.filter = IMG_FILTER; } catch {}
+    ctx.translate(out, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, out, out);
+    return canvas.toDataURL('image/jpeg', 0.85);
   };
 
   const captureFromDataUrl = async (dataUrl, maxSize = 480) => {
@@ -276,9 +339,12 @@
     }
   };
 
-  // One-shot gate: liveness + optional face match. Tries the far / mid /
-  // near crops in sequence so the user can be at any reasonable distance
-  // from the camera and still pass. First successful zoom wins.
+  // One-shot gate: liveness + optional face match. Tries captures at many
+  // distances so a user 6-8+ feet from the camera still passes:
+  //   1. face-centered crop from FaceDetector's bbox (best for far users)
+  //   2. full rectangular frame (no edge loss)
+  //   3. far / mid / near center crops (legacy fallback)
+  // First successful attempt wins.
   const gate = async (video, refPhoto) => {
     const faceN = await detectFaceCount(video);
     if (faceN !== null && faceN === 0) {
@@ -289,23 +355,28 @@
     }
 
     const ref = refPhoto ? await captureFromDataUrl(refPhoto) : null;
+    const attempts = [
+      { name: 'face', frame: await captureAroundFace(video, 480) },
+      { name: 'full', frame: captureFullFrame(video, 640) },
+      { name: 'far',  frame: captureFrameAtZoom(video, 'far',  480) },
+      { name: 'mid',  frame: captureFrameAtZoom(video, 'mid',  480) },
+      { name: 'near', frame: captureFrameAtZoom(video, 'near', 480) },
+    ];
+
     let lastReason = 'liveness-failed';
     let lastFrame  = null;
 
-    for (const zoom of ZOOM_LEVELS) {
-      const frame = captureFrameAtZoom(video, zoom, 480);
+    for (const { name, frame } of attempts) {
       if (!frame) continue;
       lastFrame = frame;
-
       const live = await liveness2D(frame);
       if (!live || !live.success) { lastReason = 'liveness-failed'; continue; }
-
       if (ref) {
         const m = await match2D(frame, ref);
-        if (m.noFace) { lastReason = 'no-face'; continue; }
+        if (m.noFace)   { lastReason = 'no-face'; continue; }
         if (!m.success) { lastReason = 'no-match'; continue; }
       }
-      return { ok: true, frame, zoom };
+      return { ok: true, frame, zoom: name };
     }
     return { ok: false, reason: lastReason, frame: lastFrame };
   };
@@ -396,11 +467,17 @@
       awayStreak = 0;
 
       // Exactly 1 face (or FaceDetector unavailable). Run 2D liveness on
-      // the current zoom in the far/mid/near rotation so the user can be
-      // at any distance and still get picked up over a few ticks.
-      const zoom = ZOOM_LEVELS[zoomCursor % ZOOM_LEVELS.length];
+      // the current capture strategy in the rotation:
+      //   face → full → far → mid → near → (repeat)
+      // That lets a user sitting anywhere from right-up-close to across
+      // the room pass on at least one tick out of every few.
+      const ATTEMPT_ORDER = ['face', 'full', 'far', 'mid', 'near'];
+      const attempt = ATTEMPT_ORDER[zoomCursor % ATTEMPT_ORDER.length];
       zoomCursor++;
-      const frame = captureFrameAtZoom(video, zoom, 320);
+      let frame = null;
+      if      (attempt === 'face') frame = await captureAroundFace(video, 480);
+      else if (attempt === 'full') frame = captureFullFrame(video, 640);
+      else                         frame = captureFrameAtZoom(video, attempt, 400);
       const live = await liveness2D(frame);
       if (!live || !live.success) {
         livenessFailStreak++;
@@ -542,7 +619,8 @@
   root.cqFacetec = {
     configure,
     get simMode() { return config.simMode; },
-    captureFrame, captureFromDataUrl,
+    captureFrame, captureFrameAtZoom, captureFullFrame, captureAroundFace,
+    captureFromDataUrl,
     detectFaceCount, faceDetectorSupported, liveness2D, match2D,
     gate, startContinuousLiveness, startVoiceActivity,
     openCamera, closeStream,
