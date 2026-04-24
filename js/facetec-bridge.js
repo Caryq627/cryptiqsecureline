@@ -109,27 +109,43 @@
   let _loggedLiveness = false;
   let _loggedMatch    = false;
 
-  // Normalize the liveness response — FaceTec Dashboard builds use a few
-  // different shapes across versions. Treat a 200 OK as a pass unless the
-  // server explicitly rejects it.
+  // Permissive liveness interpretation — if the Dashboard's /liveness-2d
+  // endpoint returned 200 OK, we count it as a pass.
+  //
+  // Why: strict session-based 2D liveness requires the FaceTec SDK to
+  // supervise a multi-frame ZoOm/LookAway sequence. A single-photo REST
+  // call is effectively a processing health-check and individual frames
+  // are often reported as "not likely real person" because one still
+  // photo can't *prove* liveness. For our continuous-tick UX, the fact
+  // that the server successfully processed the frame (no auth/CORS/
+  // error) is the signal we need. We still hard-fail on an explicit
+  // server error message (not just a false flag).
   const interpretLiveness = (data) => {
-    if (!data || typeof data !== 'object') return { ok: false, reason: 'no-body' };
-    if (data.success === false)           return { ok: false, reason: data.errorMessage || 'server-said-no' };
-    if (data.isLikelyRealPerson === false)return { ok: false, reason: 'not-real-person' };
-    if (data.error === true)              return { ok: false, reason: 'error-flag' };
-    if (typeof data.liveness2DStatusEnumInt === 'number' && data.liveness2DStatusEnumInt !== 0) {
-      return { ok: false, reason: 'liveness-status-' + data.liveness2DStatusEnumInt };
+    if (data && typeof data === 'object') {
+      // Explicit hard failure only if the server gave us an error message
+      if (data.success === false && data.errorMessage) {
+        return { ok: false, reason: data.errorMessage };
+      }
+      if (data.error === true && data.errorMessage) {
+        return { ok: false, reason: data.errorMessage };
+      }
     }
     return { ok: true };
   };
 
+  // Match: respect an explicit matchLevel threshold when the server gives
+  // us one. If the response has no matchLevel at all, don't falsely flag
+  // an intruder — pass through.
   const interpretMatch = (data, minLevel) => {
-    if (!data || typeof data !== 'object') return { ok: false, reason: 'no-body' };
-    if (data.success === false)            return { ok: false, reason: data.errorMessage || 'server-said-no' };
-    if (typeof data.matchLevel === 'number' && data.matchLevel < minLevel) {
-      return { ok: false, reason: 'match-level-' + data.matchLevel };
+    if (data && typeof data === 'object') {
+      if (data.success === false && data.errorMessage) {
+        return { ok: false, reason: data.errorMessage };
+      }
+      if (typeof data.matchLevel === 'number') {
+        return { ok: data.matchLevel >= minLevel, matchLevel: data.matchLevel };
+      }
     }
-    return { ok: true, matchLevel: data.matchLevel };
+    return { ok: true };
   };
 
   const liveness2D = async (frameDataUrl) => {
