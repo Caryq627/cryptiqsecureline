@@ -1347,6 +1347,12 @@ button { font-family: inherit; }
    left bracket → dot 1 → dot 2 → dot 3 → right bracket → confirm glow.
    ============================================================ */
 
+/* Intro rings spin much faster than the resting landing state so the motion
+   is clearly visible during the short 2.8s loader window. */
+.intro-loader .cq-logo .cq-ring-1 { animation-duration: 3.6s; }
+.intro-loader .cq-logo .cq-ring-2 { animation-duration: 2.6s; }
+.intro-loader .cq-logo .cq-ring-3 { animation-duration: 1.8s; }
+
 .intro-loader .cq-logo .cq-bracket {
   stroke: #fff;
   animation: cq-link-stroke 0.45s ease forwards;
