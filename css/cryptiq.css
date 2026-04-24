@@ -367,16 +367,26 @@ button { font-family: inherit; }
 .btn-sm    { padding: 8px 12px; font-size: 11px; letter-spacing: 0.08em; }
 .btn-lg    { padding: 16px 24px; font-size: 15px; }
 
-/* Icon-only round button (for call controls) */
+/* Icon-only round button (for call controls). Idle state is a teal-outlined
+   circle with a teal icon — on-brand and clearly not "disabled". */
 .btn-icon {
   width: 52px; height: 52px;
   border-radius: 50%;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  background: var(--bg-raise);
-  border-color: rgba(255,255,255,0.08);
+  background: transparent;
+  border: 1.5px solid var(--accent-line);
+  color: var(--accent);
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.18s;
 }
-.btn-icon svg { width: 20px; height: 20px; }
+.btn-icon:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px rgba(46,196,182,0.25);
+}
+.btn-icon svg { width: 20px; height: 20px; display: block; }
 .btn-icon.is-active {
   background: var(--accent);
   border-color: var(--accent);
@@ -392,6 +402,10 @@ button { font-family: inherit; }
   background: var(--danger);
   border-color: var(--danger);
   color: white;
+}
+.btn-icon.is-danger:hover {
+  background: #ff747a;
+  box-shadow: 0 0 14px rgba(255,90,95,0.35);
 }
 
 /* ============================================================

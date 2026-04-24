@@ -27,8 +27,7 @@
       <div class="rail-meta">
         <span class="live-indicator"><span class="dot"></span>LIVE · VOICE</span>
         <span id="roster-count">0 verified</span>
-        <button id="demo-toggle" class="btn btn-ghost btn-sm" type="button" title="Demo controls"><span data-icon="sparkles"></span><span class="demo-label">&nbsp;DEMO</span></button>
-        <span id="mode-tag">SIM</span>
+        <button id="demo-toggle" class="btn btn-ghost btn-sm" type="button" title="Demo controls" style="display:none;"><span data-icon="sparkles"></span><span class="demo-label">&nbsp;DEMO</span></button>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
       </div>
     </header>
@@ -113,6 +112,13 @@
   <script src="js/icons.js"></script>
   <script src="js/theme.js"></script>
   <script src="js/secure-line.js"></script>
+  <script>
+    // Live FaceTec configuration. Must be set before facetec-bridge.js loads.
+    window.CQ_FACETEC = {
+      server:    'https://54.211.82.159.sslip.io',
+      deviceKey: 'dNcawGQtDA4vGqAYgR2lUTmlmAivtfNT'
+    };
+  </script>
   <script src="js/facetec-bridge.js"></script>
   <script>
     cqIconsHydrate();
@@ -122,10 +128,11 @@
     const params = new URLSearchParams(location.search);
     const lineId = params.get('line');
     const meParam = params.get('me');
+    const isDemo = params.get('demo') === '1';
 
     const line = lineId ? cqLine.getLine(lineId) : null;
     if (!line) {
-      document.body.innerHTML = '<div style="padding:40px; text-align:center; color:var(--fg-muted);">This secure line is not available on this device.<br><br><a class="btn btn-ghost" href="index.html">← Home</a></div>';
+      document.body.innerHTML = '<div style="padding:40px; text-align:center; color:var(--fg-muted);">This secure line is not available on this device.<br><br><a class="btn btn-ghost" href="/">← Home</a></div>';
       throw new Error('no line');
     }
 
@@ -136,7 +143,7 @@
       const pickPid = meParam || sessionPid;
       me = line.participants.find(p => p.id === pickPid) || line.participants[0];
       if (!me) {
-        document.body.innerHTML = '<div style="padding:40px; text-align:center; color:var(--fg-muted);">No attendees enrolled on this line yet.<br><br><a class="btn btn-ghost" href="index.html">← Home</a></div>';
+        document.body.innerHTML = '<div style="padding:40px; text-align:center; color:var(--fg-muted);">No attendees enrolled on this line yet.<br><br><a class="btn btn-ghost" href="/">← Home</a></div>';
         throw new Error('no me');
       }
       cqLine.setSession({
@@ -150,7 +157,6 @@
 
     document.getElementById('line-name').textContent = line.name;
     document.getElementById('line-code').textContent = line.id;
-    document.getElementById('mode-tag').textContent = cqFacetec.simMode ? 'SIM' : 'LIVE';
     const startedAt = Date.now();
     const clockEl = document.getElementById('line-clock');
     setInterval(() => {
@@ -331,7 +337,7 @@
       applyMicMute();
 
       stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
-        refPhoto: me.photo,
+        refPhoto: isDemo ? null : me.photo,
         tickMs: 1800,
         cb: livenessCallback,
       });
@@ -508,7 +514,7 @@
       if (stopVad) stopVad();
       cqFacetec.closeStream(selfStream);
       cqLine.clearSession();
-      location.href = 'index.html';
+      location.href = '/';
     };
 
     window.addEventListener('beforeunload', () => {
@@ -585,7 +591,7 @@
       // Restart continuous liveness loop.
       if (selfStream && selfVideo) {
         stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
-          refPhoto: me.photo,
+          refPhoto: isDemo ? null : me.photo,
           tickMs: 1800,
           cb: livenessCallback,
         });
@@ -639,22 +645,28 @@
       }
     });
 
-    // ---------- Demo panel ----------
+    // ---------- Demo panel (only visible when ?demo=1) ----------
 
     const demoBtn = document.getElementById('demo-toggle');
     const demoPanel = document.getElementById('demo-panel');
-    demoBtn.addEventListener('click', () => {
-      demoPanel.style.display = demoPanel.style.display === 'block' ? 'none' : 'block';
-    });
-    document.getElementById('sim-away').addEventListener('click', () => {
-      if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('away', 6000);
-    });
-    document.getElementById('sim-intruder').addEventListener('click', () => {
-      if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('intruder', 6000);
-    });
-    document.getElementById('sim-verified').addEventListener('click', () => {
-      if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('verified', 2000);
-    });
+    if (!isDemo) {
+      demoBtn.remove();
+      demoPanel.remove();
+    } else {
+      demoBtn.style.display = '';
+      demoBtn.addEventListener('click', () => {
+        demoPanel.style.display = demoPanel.style.display === 'block' ? 'none' : 'block';
+      });
+      document.getElementById('sim-away').addEventListener('click', () => {
+        if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('away', 6000);
+      });
+      document.getElementById('sim-intruder').addEventListener('click', () => {
+        if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('intruder', 6000);
+      });
+      document.getElementById('sim-verified').addEventListener('click', () => {
+        if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('verified', 2000);
+      });
+    }
 
     // ---------- Go ----------
 

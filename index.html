@@ -16,7 +16,7 @@
   <div class="page">
 
     <header class="top-rail">
-      <a class="brand" href="index.html">
+      <a class="brand" href="/">
         <span class="mark" data-icon="phoneLock"></span>
         <span class="wordmark">
           <span class="big">CRYPTIQ</span>
@@ -58,6 +58,8 @@
 
         <p class="sub">
           Have a link? <a href="#" id="paste-link">Paste &amp; join →</a>
+          &nbsp;·&nbsp;
+          <a href="#" id="try-demo">Try a sample call →</a>
         </p>
       </section>
     </main>
@@ -69,8 +71,10 @@
 
   <script src="js/icons.js"></script>
   <script src="js/theme.js"></script>
+  <script src="js/secure-line.js"></script>
   <script>
     cqIconsHydrate();
+
     document.getElementById('paste-link').addEventListener('click', async (e) => {
       e.preventDefault();
       let text = '';
@@ -86,6 +90,28 @@
         }
       } catch {}
       alert('That doesn’t look like a secure line link.');
+    });
+
+    // "Try a sample call" → seed an in-memory line with demo attendees, then
+    // open the call room with ?demo=1 (which re-enables force-state controls).
+    document.getElementById('try-demo').addEventListener('click', (e) => {
+      e.preventDefault();
+      const svg = (label, bg) => 'data:image/svg+xml;base64,' + btoa(
+        `<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'>` +
+        `<rect width='200' height='200' fill='${bg}'/>` +
+        `<circle cx='100' cy='78' r='34' fill='rgba(255,255,255,0.25)'/>` +
+        `<ellipse cx='100' cy='170' rx='60' ry='36' fill='rgba(255,255,255,0.22)'/>` +
+        `<text x='100' y='112' text-anchor='middle' font-family='DM Sans' font-size='18' font-weight='700' fill='white' letter-spacing='2'>${label}</text>` +
+        `</svg>`
+      );
+      const line = cqLine.createLine('Sample call');
+      const host = cqLine.addParticipant(line.id, { name: 'You (demo)',  photo: svg('YOU','#0f6660') });
+      cqLine.setHost(line.id, host.id);
+      cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svg('JC','#3d4a6b') });
+      cqLine.addParticipant(line.id, { name: 'Marcus Reid',     photo: svg('MR','#6b2f4a') });
+      cqLine.addParticipant(line.id, { name: 'Priya Natarajan', photo: svg('PN','#4a6b2f') });
+      cqLine.setSession({ lineId: line.id, participantId: host.id });
+      location.href = `call.html?line=${encodeURIComponent(line.id)}&me=${encodeURIComponent(host.id)}&demo=1`;
     });
   </script>
 </body>
