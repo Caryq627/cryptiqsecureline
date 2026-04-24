@@ -268,15 +268,27 @@
       refPhoto = null,
       tickMs = config.tickMs,
       cb = () => {},
+      // Grace window after the loop starts where any "bad" state is shown
+      // as 'verifying' instead of 'away'/'intruder'. Lets the user settle
+      // in after the face-gate passed without a false first-tick alarm.
+      graceMs = 3500,
     } = opts;
 
     let alive = true;
     let awayStreak = 0;
+    let intruderStreak = 0;
     let livenessFailStreak = 0;
     let lastState = 'verifying';
     let forced = null; // { state, until } — demo override
+    const startedAt = Date.now();
 
     const emit = (state, meta) => {
+      const inGrace = Date.now() - startedAt < graceMs;
+      if (inGrace && (state === 'away' || state === 'intruder')) {
+        cb('verifying', Object.assign({ grace: true }, meta || {}));
+        lastState = 'verifying';
+        return;
+      }
       cb(state, meta || {});
       lastState = state;
     };
@@ -297,32 +309,36 @@
         return;
       }
 
-      // Primary away/intruder signal: the browser's native FaceDetector —
-      // a proper ML face detector (not a skin-tone or brightness heuristic).
+      // Face-count is the primary away/intruder signal. FaceDetector is a
+      // proper ML face detector (Chrome/Edge) — not a heuristic.
       const faceN = await detectFaceCount(video);
 
+      // 0 faces → AWAY (orange). Clean signal: the verified person is
+      // simply not in frame right now.
       if (faceN === 0) {
         awayStreak++;
+        intruderStreak = 0;
         emit(awayStreak >= 1 ? 'away' : 'verifying', { faces: 0, awayStreak });
         return;
       }
+      // 2+ faces → INTRUDER (red). Someone extra is in the room.
       if (faceN !== null && faceN > 1) {
         awayStreak = 0;
-        emit('intruder', { faces: faceN });
+        intruderStreak++;
+        emit('intruder', { reason: 'multiple-faces', faces: faceN });
         return;
       }
       awayStreak = 0;
 
-      // We either got exactly 1 face, OR FaceDetector is unavailable.
-      // Let FaceTec 2D liveness be the authoritative signal. In browsers
-      // without FaceDetector (Safari), the liveness-failure streak is our
-      // only way to detect "no face in frame" — flip to away after 2 ticks.
+      // Exactly 1 face (or FaceDetector unavailable). Run 2D liveness.
       const frame = captureFrame(video, 320);
       const live = await liveness2D(frame);
-      if (!live || !live.success || live.isLikelyRealPerson === false) {
+      if (!live || !live.success) {
         livenessFailStreak++;
+        // Without FaceDetector, sustained liveness failure is our only
+        // way to infer "no face in frame" → treat as away.
         if (faceN === null && livenessFailStreak >= 2) {
-          emit('away', { reason: 'liveness-streak-no-detector', livenessFailStreak });
+          emit('away', { reason: 'liveness-streak-no-detector' });
         } else {
           emit('verifying', { liveness: false, faces: faceN, livenessFailStreak });
         }
@@ -330,17 +346,24 @@
       }
       livenessFailStreak = 0;
 
-      // Identity match every ~3rd tick when a reference photo is set —
-      // this is what actually catches imposters who look similar enough
-      // to pass liveness but aren't the enrolled person.
-      if (refPhoto && Math.random() < 0.33) {
+      // Identity match on EVERY tick when a reference photo is set, so a
+      // different face trips "intruder" quickly. Require 2 consecutive
+      // failures before flipping — a single-frame mismatch could be a
+      // glance, bad lighting, or motion blur. Two in a row is a real miss.
+      if (refPhoto) {
         const ref = await captureFromDataUrl(refPhoto);
         const m = await match2D(frame, ref);
-        if (!m.success || (typeof m.matchLevel === 'number' && m.matchLevel < config.minMatchLevel)) {
-          emit('intruder', { reason: 'identity-mismatch', faces: faceN });
+        if (!m.success) {
+          intruderStreak++;
+          if (intruderStreak >= 2) {
+            emit('intruder', { reason: 'identity-mismatch', matchLevel: m.matchLevel, faces: faceN });
+            return;
+          }
+          emit('verifying', { matchLevel: m.matchLevel, intruderStreak, faces: faceN });
           return;
         }
       }
+      intruderStreak = 0;
       emit('verified', { faces: faceN });
     };
 
