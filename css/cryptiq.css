@@ -1133,6 +1133,51 @@ button { font-family: inherit; }
 .self-preview.state-held .label     { color: var(--fg-muted); }
 
 /* ============================================================
+   Face gate overlay — verifies 2D liveness + 1:1 match before
+   any privileged action (entering a call, etc.)
+   ============================================================ */
+.face-gate-overlay {
+  position: fixed; inset: 0;
+  background: rgba(11,14,18,0.92);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 55;
+  animation: cq-badge-in 0.25s ease;
+}
+.face-gate-card {
+  background: var(--bg-raise);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-card);
+  padding: 28px 24px 22px;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+  box-shadow: var(--glow-strong);
+}
+.face-gate-card .card-eyebrow { justify-content: center; }
+.face-gate-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+}
+.face-gate-lead {
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+.face-gate-card .viewfinder {
+  width: 220px;
+  height: 220px;
+  margin: 0 auto 12px;
+}
+.face-gate-card .btn-ghost { margin-top: 6px; }
+
+/* ============================================================
    Hold overlay — user is paused and re-verifies to return
    ============================================================ */
 .hold-overlay {

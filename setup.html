@@ -203,6 +203,7 @@
     };
   </script>
   <script src="js/facetec-bridge.js"></script>
+  <script src="js/cq-face-gate.js"></script>
   <script src="js/cq-connecting.js"></script>
   <script>
     cqIconsHydrate();
@@ -699,10 +700,22 @@
         step = 3;
       } else if (step === 3) {
         const session = cqLine.getSession();
-        const me = session && session.lineId === line.id ? session.participantId : (line.participants[0] && line.participants[0].id);
-        const callUrl = cqLine.buildCallLink(line, me);
+        const mePid = session && session.lineId === line.id ? session.participantId : (line.participants[0] && line.participants[0].id);
+        const meObj = line.participants.find(p => p.id === mePid);
+        const callUrl = cqLine.buildCallLink(line, mePid);
+        const firstName = meObj ? meObj.name.split(' ')[0] : 'you';
         el.nextBtn.disabled = true;
-        cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+        // Verify live 2D liveness + identity match BEFORE we play the
+        // connecting animation — no one gets in without being proven live.
+        cqFaceGate.verify({
+          refPhoto:  meObj ? meObj.photo : null,
+          headline:  `Verify it's you, ${firstName}`,
+          sub:       'Live face check before entering your own line.',
+          onVerified: () => {
+            cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+          },
+          onCancel: () => { el.nextBtn.disabled = false; },
+        });
         return;
       }
       renderStep();
