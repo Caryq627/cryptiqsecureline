@@ -98,6 +98,7 @@
     };
   </script>
   <script src="js/facetec-bridge.js"></script>
+  <script src="js/cq-connecting.js"></script>
   <script>
     cqIconsHydrate();
 
@@ -294,7 +295,9 @@
         enteredAt: Date.now(),
       });
       cqFacetec.closeStream(stream);
-      location.href = cqLine.buildCallLink(line, gatePass.participantId);
+      const callUrl = cqLine.buildCallLink(line, gatePass.participantId);
+      el.go.disabled = true;
+      cqConnecting.show({ onDone: () => { location.href = callUrl; } });
     });
   </script>
 </body>

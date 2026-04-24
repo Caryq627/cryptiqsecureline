@@ -143,15 +143,15 @@
       </div>
       <h2 id="cap-heading" style="font-size:22px; margin:0 0 14px; font-weight:600;">Capture their face</h2>
 
-      <!-- Mode tabs: live capture vs upload -->
-      <div class="pill-select" id="cap-mode" style="margin-bottom: 16px; width: 100%; justify-content: center;">
-        <button type="button" class="is-on" data-mode="camera">
-          <span data-icon="camera" style="vertical-align:-2px; display:inline-flex; width:12px; height:12px;"></span>
-          &nbsp;LIVE CAPTURE
+      <!-- Mode tabs: live capture vs upload — two isolated buttons, not a pill group -->
+      <div class="mode-tabs" id="cap-mode">
+        <button type="button" class="mode-tab is-on" data-mode="camera">
+          <span data-icon="camera"></span>
+          Live capture
         </button>
-        <button type="button" data-mode="upload">
-          <span data-icon="upload" style="vertical-align:-2px; display:inline-flex; width:12px; height:12px;"></span>
-          &nbsp;UPLOAD PHOTO
+        <button type="button" class="mode-tab" data-mode="upload">
+          <span data-icon="upload"></span>
+          Upload photo
         </button>
       </div>
 
@@ -203,6 +203,7 @@
     };
   </script>
   <script src="js/facetec-bridge.js"></script>
+  <script src="js/cq-connecting.js"></script>
   <script>
     cqIconsHydrate();
 
@@ -699,7 +700,10 @@
       } else if (step === 3) {
         const session = cqLine.getSession();
         const me = session && session.lineId === line.id ? session.participantId : (line.participants[0] && line.participants[0].id);
-        location.href = cqLine.buildCallLink(line, me);
+        const callUrl = cqLine.buildCallLink(line, me);
+        el.nextBtn.disabled = true;
+        cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+        return;
       }
       renderStep();
     });

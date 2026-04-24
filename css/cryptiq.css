@@ -673,6 +673,51 @@ button { font-family: inherit; }
   margin-right: 4px;
 }
 
+/* Mode-tabs: two or three properly-isolated buttons (replaces the cramped
+   pill-group when each option deserves equal billing — e.g., LIVE CAPTURE vs
+   UPLOAD PHOTO). Each button is its own card, clearly separated by a gap. */
+.mode-tabs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.mode-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 13px 14px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: var(--r-soft);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+.mode-tab:hover {
+  border-color: var(--accent-line);
+  color: var(--fg);
+  background: var(--accent-soft);
+}
+.mode-tab svg {
+  width: 14px; height: 14px;
+  display: block;
+  color: currentColor;
+}
+.mode-tab.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 20px rgba(46,196,182,0.32);
+}
+
 .pill-select {
   display: inline-flex;
   gap: 2px;
