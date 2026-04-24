@@ -22,17 +22,17 @@
       <symbol id="cq-mark" viewBox="0 0 240 240">
         <!-- Three concentric broken-arc rings. Each spins at a different speed/direction via CSS. -->
         <circle class="cq-ring cq-ring-1" cx="120" cy="120" r="112"
-                fill="none" stroke="#2ec4b6" stroke-opacity="0.62"
-                stroke-width="1.6" stroke-linecap="round"
-                stroke-dasharray="84 20 62 26 104 30 42 22"/>
+                fill="none" stroke="#2ec4b6" stroke-opacity="0.85"
+                stroke-width="1.8" stroke-linecap="round"
+                stroke-dasharray="110 40 78 30 120 32 60 34"/>
         <circle class="cq-ring cq-ring-2" cx="120" cy="120" r="103"
-                fill="none" stroke="#2ec4b6" stroke-opacity="0.46"
-                stroke-width="1.3" stroke-linecap="round"
-                stroke-dasharray="34 18 78 22 62 16 82 24"/>
+                fill="none" stroke="#2ec4b6" stroke-opacity="0.65"
+                stroke-width="1.4" stroke-linecap="round"
+                stroke-dasharray="58 28 95 24 72 28 95 28"/>
         <circle class="cq-ring cq-ring-3" cx="120" cy="120" r="94"
-                fill="none" stroke="#2ec4b6" stroke-opacity="0.34"
-                stroke-width="1" stroke-linecap="round"
-                stroke-dasharray="54 14 86 22 108 20"/>
+                fill="none" stroke="#2ec4b6" stroke-opacity="0.50"
+                stroke-width="1.2" stroke-linecap="round"
+                stroke-dasharray="70 22 90 28 110 26 50 24"/>
 
         <!-- Shield -->
         <path class="cq-shield"
@@ -40,17 +40,28 @@
               fill="url(#cq-shield-grad)"
               stroke="#2ec4b6" stroke-opacity="0.85" stroke-width="1.6" stroke-linejoin="round"/>
 
-        <!-- Phone + padlock glyph — single clean centered mark. -->
-        <g class="cq-phones" fill="white" transform="translate(120 122)">
-          <!-- Solid phone handset, scaled + centered -->
-          <g transform="rotate(-8) translate(-28 -28) scale(3.5)">
+        <!-- Call-exchange glyph: two solid phone handsets in opposite quadrants
+             forming a rotational pattern, with exchange arrows in the gap. -->
+        <g class="cq-phones" fill="white">
+          <!-- Handset A: upper-right quadrant, tilted so the handset curves inward -->
+          <g transform="translate(133 107) rotate(-40) scale(2.1) translate(-8 -8)">
             <path d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
           </g>
-          <!-- Small padlock tucked into the upper-right of the handset -->
-          <g transform="translate(20 -22)">
-            <rect x="-7" y="-2" width="14" height="10.5" rx="1.5" fill="white"/>
-            <path d="M -4.2 -2 V -5.5 a 4.2 4.2 0 0 1 8.4 0 V -2"
-                  fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+          <!-- Handset B: lower-left quadrant, rotated 180° relative to A -->
+          <g transform="translate(107 133) rotate(140) scale(2.1) translate(-8 -8)">
+            <path d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
+          </g>
+          <!-- Two small exchange arrows in the center gap, tilted along the
+               same diagonal as the two phones, pointing in opposite directions. -->
+          <g stroke="white" stroke-width="2.4" stroke-linecap="round"
+             stroke-linejoin="round" fill="none" opacity="0.98"
+             transform="translate(120 120) rotate(-45)">
+            <!-- Upper arrow → pointing right (will become ↗ after the -45° rotation) -->
+            <line x1="-9" y1="-4" x2="8" y2="-4"/>
+            <polyline points="4,-8 8,-4 4,0"/>
+            <!-- Lower arrow ← pointing left (will become ↙ after the -45° rotation) -->
+            <line x1="9" y1="4" x2="-8" y2="4"/>
+            <polyline points="-4,0 -8,4 -4,8"/>
           </g>
         </g>
       </symbol>
