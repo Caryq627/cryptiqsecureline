@@ -143,16 +143,36 @@
   };
 
   // Match: respect an explicit matchLevel threshold when the server gives
-  // us one. If the response has no matchLevel at all, don't falsely flag
-  // an intruder — pass through.
+  // us one. Also distinguish "no face in the current frame" (noFace) from
+  // "different face confirmed" (clear mismatch) — callers use this to
+  // decide between AWAY and INTRUDER.
   const interpretMatch = (data, minLevel) => {
-    if (data && typeof data === 'object') {
-      if (data.success === false && data.errorMessage) {
-        return { ok: false, reason: data.errorMessage };
+    if (!data || typeof data !== 'object') return { ok: true };
+
+    // FaceTec reports per-image processing status. If image0 (the current
+    // frame) had no face found, this isn't an identity mismatch — the user
+    // just isn't in front of the camera. Route to "away" instead.
+    const img0Status = data.image0ProcessingStatusEnumInt;
+    if (typeof img0Status === 'number' && img0Status !== 0) {
+      return { ok: false, noFace: true, reason: 'no-face-in-frame' };
+    }
+    const img1Status = data.image1ProcessingStatusEnumInt;
+    if (typeof img1Status === 'number' && img1Status !== 0) {
+      // Reference image couldn't be processed — our problem, not the user's.
+      return { ok: true, reason: 'ref-photo-unreadable' };
+    }
+
+    if (data.success === false && data.errorMessage) {
+      // If the message says "no face" / "could not find face" etc., treat
+      // as noFace (away), not mismatch (intruder).
+      const msg = String(data.errorMessage).toLowerCase();
+      if (msg.includes('no face') || msg.includes('could not find') || msg.includes('face not')) {
+        return { ok: false, noFace: true, reason: data.errorMessage };
       }
-      if (typeof data.matchLevel === 'number') {
-        return { ok: data.matchLevel >= minLevel, matchLevel: data.matchLevel };
-      }
+      return { ok: false, reason: data.errorMessage };
+    }
+    if (typeof data.matchLevel === 'number') {
+      return { ok: data.matchLevel >= minLevel, matchLevel: data.matchLevel };
     }
     return { ok: true };
   };
@@ -220,6 +240,7 @@
       return {
         success: verdict.ok,
         matchLevel: verdict.matchLevel,
+        noFace: !!verdict.noFace,
         reason: verdict.reason,
         raw: data,
       };
@@ -321,11 +342,18 @@
         emit(awayStreak >= 1 ? 'away' : 'verifying', { faces: 0, awayStreak });
         return;
       }
-      // 2+ faces → INTRUDER (red). Someone extra is in the room.
+      // 2+ faces → potentially INTRUDER. Debounce: require 2 consecutive
+      // multi-face frames before flagging, because FaceDetector sometimes
+      // mis-reports two faces on a single frame (reflections, photo on a
+      // wall, etc.). One noisy frame shouldn't alarm the whole call.
       if (faceN !== null && faceN > 1) {
         awayStreak = 0;
         intruderStreak++;
-        emit('intruder', { reason: 'multiple-faces', faces: faceN });
+        if (intruderStreak >= 2) {
+          emit('intruder', { reason: 'multiple-faces', faces: faceN });
+          return;
+        }
+        emit('verifying', { reason: 'multi-face-debounce', faces: faceN, intruderStreak });
         return;
       }
       awayStreak = 0;
@@ -346,13 +374,24 @@
       }
       livenessFailStreak = 0;
 
-      // Identity match on EVERY tick when a reference photo is set, so a
-      // different face trips "intruder" quickly. Require 2 consecutive
-      // failures before flipping — a single-frame mismatch could be a
-      // glance, bad lighting, or motion blur. Two in a row is a real miss.
+      // Identity match on EVERY tick when a reference photo is set. We
+      // strictly separate two failure reasons:
+      //   - noFace: FaceTec couldn't find a face in the current frame →
+      //     route to AWAY (the user isn't really in the camera). Not an
+      //     intruder, just not detected.
+      //   - mismatch: a face IS in frame but it doesn't match the enrolled
+      //     reference → INTRUDER, but only after 2 consecutive confirms so
+      //     transient motion/blur/angles don't falsely alarm.
       if (refPhoto) {
         const ref = await captureFromDataUrl(refPhoto);
         const m = await match2D(frame, ref);
+
+        if (m.noFace) {
+          awayStreak++;
+          intruderStreak = 0;
+          emit('away', { reason: 'no-face-in-match-frame', awayStreak });
+          return;
+        }
         if (!m.success) {
           intruderStreak++;
           if (intruderStreak >= 2) {
