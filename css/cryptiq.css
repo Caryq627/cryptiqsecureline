@@ -1394,11 +1394,10 @@ button { font-family: inherit; }
 @keyframes cq-spin-cw  { to { transform: rotate(360deg); } }
 @keyframes cq-spin-ccw { to { transform: rotate(-360deg); } }
 
-.cq-logo.is-idle .cq-ring-1,
-.cq-logo.is-idle .cq-ring-2,
-.cq-logo.is-idle .cq-ring-3 {
-  animation-duration: 24s, 18s, 12s;   /* slower when resting on the landing */
-}
+/* Slower, calmer rotation on the landing-card version (kept visibly moving). */
+.cq-logo.is-idle .cq-ring-1 { animation-duration: 18s; }
+.cq-logo.is-idle .cq-ring-2 { animation-duration: 14s; }
+.cq-logo.is-idle .cq-ring-3 { animation-duration: 10s; }
 
 /* ============================================================
    Intro loader — animated logo, fades out on first-paint
