@@ -54,6 +54,8 @@
     let timer    = null;
     let checking = false;
     let done     = false;
+    let gateStart = 0;
+    const GRACE_MS = 2500;  // settle-in window — hide transient negatives
 
     const cleanup = () => {
       if (done) return;
@@ -77,6 +79,7 @@
         vf.className = 'viewfinder is-denied';
         return;
       }
+      gateStart = Date.now();
       statusEl.textContent = 'CENTER FACE IN RETICLE';
       statusEl.className = 'viewfinder-status is-verifying';
       vf.className = 'viewfinder is-verifying';
@@ -84,22 +87,32 @@
       const tick = async () => {
         if (checking || done) return;
         checking = true;
+        const inGrace = Date.now() - gateStart < GRACE_MS;
         try {
-          // Detect multi-face early so a second person in frame is caught
-          // before we even bother running the full liveness check.
           const faceN = await cqFacetec.detectFaceCount(video);
+
+          // During the grace window (while the camera is focusing and the
+          // user is settling into frame) suppress negative verdicts — just
+          // keep the neutral "centre face" prompt.
           if (faceN !== null && faceN > 1) {
+            if (inGrace) {
+              statusEl.textContent = 'CENTER FACE IN RETICLE';
+              statusEl.className = 'viewfinder-status is-verifying';
+              vf.className = 'viewfinder is-verifying';
+              return;
+            }
             statusEl.textContent = 'MULTIPLE FACES — STEP AWAY';
             statusEl.className = 'viewfinder-status is-denied';
             vf.className = 'viewfinder is-denied';
             return;
           }
           if (faceN === 0) {
-            statusEl.textContent = 'NO FACE DETECTED';
+            statusEl.textContent = inGrace ? 'CENTER FACE IN RETICLE' : 'NO FACE DETECTED';
             statusEl.className = 'viewfinder-status is-verifying';
             vf.className = 'viewfinder is-verifying';
             return;
           }
+
           statusEl.textContent = 'VERIFYING LIVENESS…';
           const r = await cqFacetec.gate(video, refPhoto);
           if (r.ok) {
@@ -111,10 +124,15 @@
               cleanup();
               if (typeof onVerified === 'function') onVerified();
             }, 420);
-          } else if (r.reason === 'no-match') {
+          } else if (r.reason === 'no-match' && !inGrace) {
+            // Only surface a hard "does not match" after the settle window.
             statusEl.textContent = 'FACE DOES NOT MATCH';
             statusEl.className = 'viewfinder-status is-denied';
             vf.className = 'viewfinder is-denied';
+          } else {
+            // Any other failure during grace stays neutral; after grace
+            // just show verifying until the next tick resolves.
+            statusEl.textContent = 'VERIFYING LIVENESS…';
           }
         } finally { checking = false; }
       };

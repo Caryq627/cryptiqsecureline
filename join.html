@@ -187,6 +187,8 @@
     let gatePass = null;      // { ok: true, frame, participantId }
     let checking = false;
     let tickTimer = null;
+    let gateStart = 0;
+    const GATE_GRACE_MS = 2500;  // settle window at page open
 
     (async () => {
       try {
@@ -197,6 +199,7 @@
         el.vf.className = 'viewfinder is-denied';
         return;
       }
+      gateStart = Date.now();
       el.status.textContent = 'CENTER FACE IN RETICLE';
       el.vf.className = 'viewfinder is-verifying';
       el.status.classList.add('is-verifying');
@@ -207,25 +210,32 @@
     const tick = async () => {
       if (checking || gatePass) return;
       checking = true;
+      const inGrace = Date.now() - gateStart < GATE_GRACE_MS;
       try {
         const faceN = await cqFacetec.detectFaceCount(el.video);
         if (faceN === 0) {
-          el.status.textContent = 'NO FACE DETECTED';
+          el.status.textContent = inGrace ? 'CENTER FACE IN RETICLE' : 'NO FACE DETECTED';
           el.vf.className = 'viewfinder is-verifying';
           el.status.className = 'viewfinder-status is-verifying';
           return;
         }
         if (faceN > 1) {
-          el.status.textContent = 'MULTIPLE FACES — STEP AWAY';
-          el.vf.className = 'viewfinder is-denied';
-          el.status.className = 'viewfinder-status is-denied';
+          if (inGrace) {
+            el.status.textContent = 'CENTER FACE IN RETICLE';
+            el.vf.className = 'viewfinder is-verifying';
+            el.status.className = 'viewfinder-status is-verifying';
+          } else {
+            el.status.textContent = 'MULTIPLE FACES — STEP AWAY';
+            el.vf.className = 'viewfinder is-denied';
+            el.status.className = 'viewfinder-status is-denied';
+          }
           return;
         }
         el.status.textContent = 'RUNNING 2D LIVENESS…';
         const refPhoto = targetParticipant ? targetParticipant.photo : null;
         const r = await cqFacetec.gate(el.video, refPhoto);
         if (!r.ok) {
-          if (r.reason === 'no-match') {
+          if (r.reason === 'no-match' && !inGrace) {
             el.status.textContent = 'IDENTITY MISMATCH';
             el.vf.className = 'viewfinder is-denied';
             el.status.className = 'viewfinder-status is-denied';
