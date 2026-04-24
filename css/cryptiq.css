@@ -1310,15 +1310,26 @@ button { font-family: inherit; }
   filter: drop-shadow(0 6px 24px rgba(46,196,182,0.35));
 }
 
-/* Subtle pulsing teal glow on the phone glyphs — reads as "securely linked". */
+/* Subtle pulsing teal glow on the code-chat glyph — reads as "securely linked". */
 .cq-logo .cq-phones {
   animation: cq-phone-link 2.4s ease-in-out infinite;
 }
 
 @keyframes cq-phone-link {
-  0%, 100% { filter: drop-shadow(0 0 3px rgba(46,196,182,0.55)); }
-  50%      { filter: drop-shadow(0 0 10px rgba(46,196,182,0.95))
-                     drop-shadow(0 0 20px rgba(46,196,182,0.45)); }
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(46,196,182,0.60)); }
+  50%      { filter: drop-shadow(0 0 14px rgba(46,196,182,0.95))
+                     drop-shadow(0 0 28px rgba(46,196,182,0.40)); }
+}
+
+/* Typing-indicator stagger on the three dots — feels like a live conversation. */
+.cq-logo .cq-dot   { animation: cq-dot-blink 1.4s ease-in-out infinite; }
+.cq-logo .cq-dot-1 { animation-delay: 0s; }
+.cq-logo .cq-dot-2 { animation-delay: 0.2s; }
+.cq-logo .cq-dot-3 { animation-delay: 0.4s; }
+
+@keyframes cq-dot-blink {
+  0%, 70%, 100% { opacity: 1; }
+  35%           { opacity: 0.32; }
 }
 
 @keyframes cq-spin-cw  { to { transform: rotate(360deg); } }

@@ -34,35 +34,21 @@
                 stroke-width="1.2" stroke-linecap="round"
                 stroke-dasharray="70 22 90 28 110 26 50 24"/>
 
-        <!-- Shield -->
-        <path class="cq-shield"
-              d="M120 52 L76 68 V130 C76 160 94 178 120 192 C146 178 164 160 164 130 V68 Z"
-              fill="url(#cq-shield-grad)"
-              stroke="#2ec4b6" stroke-opacity="0.85" stroke-width="1.6" stroke-linejoin="round"/>
-
-        <!-- Call-exchange glyph: two solid phone handsets in opposite quadrants
-             forming a rotational pattern, with exchange arrows in the gap. -->
-        <g class="cq-phones" fill="white">
-          <!-- Handset A: upper-right quadrant, tilted so the handset curves inward -->
-          <g transform="translate(133 107) rotate(-40) scale(2.1) translate(-8 -8)">
-            <path d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
-          </g>
-          <!-- Handset B: lower-left quadrant, rotated 180° relative to A -->
-          <g transform="translate(107 133) rotate(140) scale(2.1) translate(-8 -8)">
-            <path d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
-          </g>
-          <!-- Two small exchange arrows in the center gap, tilted along the
-               same diagonal as the two phones, pointing in opposite directions. -->
-          <g stroke="white" stroke-width="2.4" stroke-linecap="round"
-             stroke-linejoin="round" fill="none" opacity="0.98"
-             transform="translate(120 120) rotate(-45)">
-            <!-- Upper arrow → pointing right (will become ↗ after the -45° rotation) -->
-            <line x1="-9" y1="-4" x2="8" y2="-4"/>
-            <polyline points="4,-8 8,-4 4,0"/>
-            <!-- Lower arrow ← pointing left (will become ↙ after the -45° rotation) -->
-            <line x1="9" y1="4" x2="-8" y2="4"/>
-            <polyline points="-4,0 -8,4 -4,8"/>
-          </g>
+        <!-- Code-chat glyph in teal: angle brackets wrapping three talking dots.
+             No shield — the glyph sits directly inside the rotating rings. -->
+        <g class="cq-phones" transform="translate(120 120)">
+          <!-- Left angle bracket -->
+          <polyline points="-16,-36 -50,0 -16,36"
+                    fill="none" stroke="#2ec4b6" stroke-width="11"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Right angle bracket -->
+          <polyline points="16,-36 50,0 16,36"
+                    fill="none" stroke="#2ec4b6" stroke-width="11"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Three talking dots between the brackets — staggered blink for a "live" feel -->
+          <circle class="cq-dot cq-dot-1" cx="-18" cy="0" r="6" fill="#2ec4b6"/>
+          <circle class="cq-dot cq-dot-2" cx="0"   cy="0" r="6" fill="#2ec4b6"/>
+          <circle class="cq-dot cq-dot-3" cx="18"  cy="0" r="6" fill="#2ec4b6"/>
         </g>
       </symbol>
     </defs>
