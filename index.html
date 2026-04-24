@@ -11,8 +11,64 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/cryptiq.css" />
+
+  <!-- Reusable Cryptiq logo mark (used by the intro loader and the landing card). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="cq-shield-grad" x1="0.3" y1="0" x2="0.7" y2="1">
+        <stop offset="0%"  stop-color="#35d8c8"/>
+        <stop offset="100%" stop-color="#1f9a8c"/>
+      </linearGradient>
+      <symbol id="cq-mark" viewBox="0 0 240 240">
+        <!-- Three concentric broken-arc rings. Each spins at a different speed/direction via CSS. -->
+        <circle class="cq-ring cq-ring-1" cx="120" cy="120" r="112"
+                fill="none" stroke="#2ec4b6" stroke-opacity="0.62"
+                stroke-width="1.6" stroke-linecap="round"
+                stroke-dasharray="84 20 62 26 104 30 42 22"/>
+        <circle class="cq-ring cq-ring-2" cx="120" cy="120" r="103"
+                fill="none" stroke="#2ec4b6" stroke-opacity="0.46"
+                stroke-width="1.3" stroke-linecap="round"
+                stroke-dasharray="34 18 78 22 62 16 82 24"/>
+        <circle class="cq-ring cq-ring-3" cx="120" cy="120" r="94"
+                fill="none" stroke="#2ec4b6" stroke-opacity="0.34"
+                stroke-width="1" stroke-linecap="round"
+                stroke-dasharray="54 14 86 22 108 20"/>
+
+        <!-- Shield -->
+        <path class="cq-shield"
+              d="M120 52 L76 68 V130 C76 160 94 178 120 192 C146 178 164 160 164 130 V68 Z"
+              fill="url(#cq-shield-grad)"
+              stroke="#2ec4b6" stroke-opacity="0.85" stroke-width="1.6" stroke-linejoin="round"/>
+
+        <!-- Phone + padlock glyph — single clean centered mark. -->
+        <g class="cq-phones" fill="white" transform="translate(120 122)">
+          <!-- Solid phone handset, scaled + centered -->
+          <g transform="rotate(-8) translate(-28 -28) scale(3.5)">
+            <path d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
+          </g>
+          <!-- Small padlock tucked into the upper-right of the handset -->
+          <g transform="translate(20 -22)">
+            <rect x="-7" y="-2" width="14" height="10.5" rx="1.5" fill="white"/>
+            <path d="M -4.2 -2 V -5.5 a 4.2 4.2 0 0 1 8.4 0 V -2"
+                  fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+          </g>
+        </g>
+      </symbol>
+    </defs>
+  </svg>
 </head>
 <body>
+
+  <!-- Animated intro loader — fades out on first-paint -->
+  <div class="intro-loader" id="intro-loader" aria-hidden="true">
+    <svg class="cq-logo intro-logo" viewBox="0 0 240 240"><use href="#cq-mark"/></svg>
+    <div class="intro-wordmark">
+      <div class="big">CRYPTIQ</div>
+      <div class="sml">SECURE LINE</div>
+    </div>
+    <div class="intro-tag">Initializing secure channel…</div>
+  </div>
+
   <div class="page">
 
     <header class="top-rail">
@@ -32,6 +88,8 @@
 
     <main class="main-centered">
       <section class="card" role="main">
+        <svg class="cq-logo card-logo is-idle" viewBox="0 0 240 240" aria-hidden="true"><use href="#cq-mark"/></svg>
+
         <div class="card-eyebrow">
           <span class="dot"></span>
           VOICE-ONLY · LIVENESS-VERIFIED
@@ -74,6 +132,19 @@
   <script src="js/secure-line.js"></script>
   <script>
     cqIconsHydrate();
+
+    // Dismiss the intro loader after the animation has had time to breathe.
+    (function dismissIntro() {
+      const el = document.getElementById('intro-loader');
+      if (!el) return;
+      // If user explicitly set ?skipIntro=1, hide immediately (useful for dev).
+      const skip = new URLSearchParams(location.search).get('skipIntro') === '1';
+      const delay = skip ? 0 : 1800;
+      setTimeout(() => {
+        el.classList.add('is-done');
+        setTimeout(() => el.remove(), 700);
+      }, delay);
+    })();
 
     document.getElementById('paste-link').addEventListener('click', async (e) => {
       e.preventDefault();
