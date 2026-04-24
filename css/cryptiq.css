@@ -153,10 +153,7 @@ button { font-family: inherit; }
   display: inline-flex;
   flex-direction: column;
   line-height: 1.1;
-}
-.top-rail .brand .wordmark .big {
-  font-size: 13px;
-  letter-spacing: 0.16em;
+  gap: 3px;
 }
 .top-rail .brand .wordmark .sml {
   font-size: 9px;
@@ -164,6 +161,29 @@ button { font-family: inherit; }
   color: var(--accent);
   font-family: var(--font-mono);
   font-weight: 500;
+}
+
+/* Cryptiq wordmark — rendered as a CSS mask so the logotype inherits the
+   parent's text color. Works cleanly in both dark and light themes. */
+.cq-wordmark-img {
+  display: inline-block;
+  background: currentColor;
+  -webkit-mask: url('../assets/cryptiq-wordmark.png') left center / contain no-repeat;
+          mask: url('../assets/cryptiq-wordmark.png') left center / contain no-repeat;
+  -webkit-mask-size: contain;
+          mask-size: contain;
+  /* Aspect ratio of the source image (618×236 ≈ 2.62:1) */
+  width: 74px;
+  height: 28px;
+  color: var(--fg);
+}
+
+/* Larger size used by the intro + connecting loader */
+.intro-wordmark .cq-wordmark-img {
+  width: 180px;
+  height: 68px;
+  display: block;
+  margin: 0 auto;
 }
 
 .top-rail .rail-meta {
@@ -1232,7 +1252,7 @@ button { font-family: inherit; }
   .top-rail { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
   .top-rail .brand { gap: 8px; }
   .top-rail .brand .mark { width: 20px; height: 20px; }
-  .top-rail .brand .wordmark .big { font-size: 12px; }
+  .top-rail .brand .wordmark .cq-wordmark-img { width: 62px; height: 24px; }
   .top-rail .brand .wordmark .sml { font-size: 8px; }
 
   /* Call header: stack name / meta onto two rows, keep tiny. */
@@ -1529,19 +1549,12 @@ button { font-family: inherit; }
   text-align: center;
   animation: cq-intro-rise 0.9s ease-out 0.12s both;
 }
-.intro-loader .intro-wordmark .big {
-  font-family: var(--font-sans);
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  color: var(--fg);
-}
 .intro-loader .intro-wordmark .sml {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.32em;
   color: var(--accent);
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .intro-loader .intro-tag {
@@ -1566,7 +1579,7 @@ button { font-family: inherit; }
 
 @media (max-width: 640px) {
   .intro-loader .intro-logo { width: 180px; height: 180px; }
-  .intro-loader .intro-wordmark .big { font-size: 22px; }
+  .intro-loader .intro-wordmark .cq-wordmark-img { width: 140px; height: 52px; }
   .intro-loader .intro-wordmark .sml { font-size: 10px; }
   .intro-loader { gap: 22px; }
 }

@@ -58,10 +58,12 @@
     wrap.setAttribute('data-cq-connecting', '1');
     wrap.setAttribute('aria-hidden', 'false');
     wrap.setAttribute('role', 'status');
+    // Keep the headline option for custom messaging, but the brand image is
+    // always the Cryptiq wordmark so it reads consistently everywhere.
     wrap.innerHTML =
       glyphMarkup() +
       `<div class="intro-wordmark">
-         <div class="big">${escapeHtml(headline)}</div>
+         <span class="cq-wordmark-img" role="img" aria-label="${escapeHtml(headline)}"></span>
          <div class="sml">${escapeHtml(sub)}</div>
        </div>
        <div class="intro-tag" data-role="tag">${escapeHtml(tag)}</div>`;

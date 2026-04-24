@@ -43,6 +43,12 @@
     sparkles:   svg('<path d="m12 3 2 5 5 2-5 2-2 5-2-5-5-2 5-2Z"/><path d="M18 14l.8 2 2 .8-2 .8L18 20l-.8-2-2-.8 2-.8Z"/>'),
     sun:        svg('<circle cx="12" cy="12" r="4"/><path d="M12 3v1M12 20v1M3 12h1M20 12h1M5.6 5.6l.7.7M17.7 17.7l.7.7M5.6 18.4l.7-.7M17.7 6.3l.7-.7"/>'),
     moon:       svg('<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"/>'),
+    // Face (simple smiley outline) with a diagonal slash — reads as
+    // "no face shown" (i.e. voice-only call).
+    faceOff:    svg('<circle cx="12" cy="12" r="9"/><path d="M9 15.5c1 1 4 1 5.5 0"/><circle cx="9" cy="10.5" r="0.7" fill="currentColor" stroke="none"/><circle cx="15" cy="10.5" r="0.7" fill="currentColor" stroke="none"/><path d="M4.5 4.5 19.5 19.5"/>'),
+    // Speech bubble with three dots + diagonal slash — reads as
+    // "no fake talking" (i.e. voice-clone attacks blocked).
+    speakOff:   svg('<path d="M21 12a8 8 0 0 1-11.8 7L4 20.5l1.5-5.2A8 8 0 1 1 21 12Z"/><circle cx="8.5" cy="12" r="0.8" fill="currentColor" stroke="none"/><circle cx="12"  cy="12" r="0.8" fill="currentColor" stroke="none"/><circle cx="15.5" cy="12" r="0.8" fill="currentColor" stroke="none"/><path d="M4 4 20 20"/>'),
     // Speaker with an X: "call audio silenced for this listener" — used to
     // show other participants that an intruder-flagged user can't hear.
     volumeOff:  svg('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/>'),
