@@ -106,6 +106,15 @@
   // FaceTec server is unreachable — UI keeps working instead of false-alarming.
   let netFailStreak = 0;
   const NET_FAIL_SOFT_PASS_AFTER = 3;
+
+  // FaceTec's REST endpoints want raw base64, not a full data URL.
+  // Strip the "data:image/*;base64," prefix before posting.
+  const toRawBase64 = (dataUrl) => {
+    if (typeof dataUrl !== 'string') return dataUrl;
+    const marker = ';base64,';
+    const i = dataUrl.indexOf(marker);
+    return i >= 0 ? dataUrl.slice(i + marker.length) : dataUrl;
+  };
   let _loggedLiveness = false;
   let _loggedMatch    = false;
 
@@ -157,7 +166,7 @@
       const res = await _fetchWithTimeout(config.server + config.liveness2DPath, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-Key': config.deviceKey },
-        body: JSON.stringify({ image: frameDataUrl, customID: 'cq-secureline' }),
+        body: JSON.stringify({ image: toRawBase64(frameDataUrl), customID: 'cq-secureline' }),
       }, 18_000);
       if (!res.ok) {
         netFailStreak++;
@@ -196,7 +205,8 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Device-Key': config.deviceKey },
         body: JSON.stringify({
-          image0: frameDataUrl, image1: refDataUrl,
+          image0: toRawBase64(frameDataUrl),
+          image1: toRawBase64(refDataUrl),
           minMatchLevel: config.minMatchLevel,
         }),
       }, 18_000);
