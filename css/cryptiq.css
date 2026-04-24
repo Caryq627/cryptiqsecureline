@@ -1308,7 +1308,9 @@ button { font-family: inherit; }
 .cq-logo { display: block; }
 
 .cq-logo .cq-ring {
-  transform-origin: 120px 120px;   /* matches viewBox center */
+  /* Rotate each ring around its OWN center (not a fixed viewBox pixel),
+     so rings at different radii all spin in place instead of orbiting. */
+  transform-origin: center;
   transform-box: fill-box;
 }
 .cq-logo .cq-ring-1 { animation: cq-spin-cw  12s linear infinite; }
