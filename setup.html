@@ -114,7 +114,22 @@
             <div class="label">Shared line link · non-expiring</div>
             <div class="url" id="shared-link">—</div>
           </div>
-          <p style="font-size:12px; color:var(--fg-muted); margin:-8px 0 20px;">
+
+          <!-- Open guest link — anyone with this URL can request to join; the
+               host admits them by name + photo when they arrive. -->
+          <div class="link-box" id="guest-link-box" style="display:none;">
+            <button class="btn btn-ghost btn-sm copy" id="copy-guest" type="button">
+              <span data-icon="copy"></span> Copy
+            </button>
+            <div class="label">Open guest link · request + admit</div>
+            <div class="url" id="guest-link">—</div>
+          </div>
+          <button class="btn btn-ghost btn-block btn-sm" id="make-guest-link" type="button" style="margin: -6px 0 14px;">
+            <span data-icon="users"></span>
+            Create open guest link (admit anyone by face &amp; name)
+          </button>
+
+          <p style="font-size:12px; color:var(--fg-muted); margin:-4px 0 20px;">
             Or send a one-time expiring link to a specific attendee from the row below.
           </p>
         </div>
@@ -275,6 +290,7 @@
         el.nextBtn.innerHTML = '<span data-icon="phone"></span> Enter the line';
         cqIconsHydrate(el.nextBtn);
         el.nextBtn.disabled = false;
+        if (typeof refreshGuestIfMinted === 'function') refreshGuestIfMinted();
       }
     };
 
@@ -731,6 +747,39 @@
       await cqLine.copyToClipboard(el.sharedLink.textContent);
       toast('Shared link copied');
     });
+
+    // Open guest link — anyone with the URL can self-enroll and request
+    // to join; the host admits by name + photo on the call page.
+    const guestBox  = document.getElementById('guest-link-box');
+    const guestUrl  = document.getElementById('guest-link');
+    const makeGuest = document.getElementById('make-guest-link');
+    const copyGuest = document.getElementById('copy-guest');
+
+    const showGuestLink = () => {
+      if (!line || !line.openToken) return;
+      const url = cqLine.buildGuestLink(line);
+      guestUrl.textContent = url;
+      guestBox.style.display = '';
+      makeGuest.style.display = 'none';
+    };
+    const refreshGuestIfMinted = () => {
+      if (!line) return;
+      line = cqLine.getLine(line.id);
+      if (line && line.openToken) showGuestLink();
+    };
+    makeGuest.addEventListener('click', async () => {
+      cqLine.mintOpenLink(line.id);
+      line = cqLine.getLine(line.id);
+      showGuestLink();
+      await cqLine.copyToClipboard(guestUrl.textContent);
+      toast('Open guest link copied');
+    });
+    copyGuest.addEventListener('click', async () => {
+      await cqLine.copyToClipboard(guestUrl.textContent);
+      toast('Guest link copied');
+    });
+    // If the line was already given a guest link in a previous visit, show it.
+    refreshGuestIfMinted();
 
     // Init
     renderStep();

@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Request to join — Cryptiq Secure Line</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/cryptiq.css" />
+</head>
+<body>
+  <div class="page">
+
+    <header class="top-rail">
+      <a class="brand" href="/">
+        <svg class="cq-logo cq-mark-top is-idle" viewBox="0 0 240 240" aria-hidden="true">
+          <circle class="cq-ring cq-ring-1" cx="120" cy="120" r="114" fill="none" stroke="#2ec4b6" stroke-opacity="0.85" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="110 40 78 30 120 32 60 34"/>
+          <circle class="cq-ring cq-ring-2" cx="120" cy="120" r="96"  fill="none" stroke="#2ec4b6" stroke-opacity="0.60" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="58 28 95 24 72 28 95 28"/>
+          <circle class="cq-ring cq-ring-3" cx="120" cy="120" r="80"  fill="none" stroke="#2ec4b6" stroke-opacity="0.38" stroke-width="1.1" stroke-linecap="round" stroke-dasharray="70 22 90 28 110 26 50 24"/>
+          <g class="cq-phones" transform="translate(120 120)">
+            <polyline class="cq-bracket cq-bracket-l" points="-16,-36 -50,0 -16,36" fill="none" stroke="#2ec4b6" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline class="cq-bracket cq-bracket-r" points="16,-36 50,0 16,36"   fill="none" stroke="#2ec4b6" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle class="cq-dot cq-dot-1" cx="-18" cy="0" r="6" fill="#2ec4b6"/>
+            <circle class="cq-dot cq-dot-2" cx="0"   cy="0" r="6" fill="#2ec4b6"/>
+            <circle class="cq-dot cq-dot-3" cx="18"  cy="0" r="6" fill="#2ec4b6"/>
+          </g>
+        </svg>
+        <span class="wordmark">
+          <span class="cq-wordmark-img" role="img" aria-label="Cryptiq"></span>
+          <span class="sml">SECURE LINE</span>
+        </span>
+      </a>
+      <div class="rail-meta">
+        <span class="dot"></span>
+        <span>GUEST ENTRY</span>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
+      </div>
+    </header>
+
+    <main class="main-centered">
+      <!-- STEP 1: enrollment form -->
+      <section class="card slim" id="enroll-card">
+        <div class="card-eyebrow">
+          <span class="dot"></span>
+          <span id="g-eyebrow">REQUEST TO JOIN</span>
+        </div>
+        <h1 id="g-title" style="font-size:24px;">
+          Join <span class="accent" id="g-linename">Secure Line</span>
+        </h1>
+        <p class="lead" id="g-lead">
+          Introduce yourself so the host can admit you. We'll verify your face as you enter.
+        </p>
+
+        <!-- Same tabs used by the setup enroll modal -->
+        <div class="mode-tabs" id="g-mode">
+          <button type="button" class="mode-tab is-on" data-mode="camera">
+            <span data-icon="camera"></span>
+            Live capture
+          </button>
+          <button type="button" class="mode-tab" data-mode="upload">
+            <span data-icon="upload"></span>
+            Upload photo
+          </button>
+        </div>
+
+        <div id="g-camera-pane">
+          <div class="viewfinder" id="g-viewfinder">
+            <video id="g-video" autoplay playsinline muted></video>
+            <div class="reticle"></div>
+            <div class="scanline"></div>
+          </div>
+          <div class="viewfinder-status" id="g-status">STARTING CAMERA…</div>
+        </div>
+
+        <div id="g-upload-pane" class="hidden">
+          <div class="viewfinder" id="g-upload-preview" style="background: var(--bg-deep); display: flex; align-items: center; justify-content: center;">
+            <div id="g-upload-placeholder" style="text-align: center; color: var(--fg-dim); padding: 24px;">
+              <div style="width:36px; height:36px; margin:0 auto 10px; color:var(--accent);" data-icon="upload"></div>
+              <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.2em; text-transform:uppercase;">Drop or tap to upload</div>
+            </div>
+            <img id="g-upload-img" alt="" style="display:none; width:100%; height:100%; object-fit: cover;" />
+          </div>
+          <input id="g-file" type="file" accept="image/*" style="display:none" />
+          <div class="viewfinder-status" id="g-upload-status" style="cursor:pointer;">TAP TO UPLOAD</div>
+        </div>
+
+        <div class="field">
+          <label for="g-name">Your name</label>
+          <input id="g-name" type="text" maxlength="48" placeholder="Jane Chen" autocomplete="name" />
+        </div>
+
+        <button class="btn btn-primary btn-block" id="g-submit" type="button" disabled>
+          <span data-icon="userCheck"></span>
+          Request to join
+        </button>
+
+        <p class="sub" id="g-error" style="display:none; color:var(--danger);"></p>
+      </section>
+
+      <!-- STEP 2: waiting for admission -->
+      <section class="card slim hidden" id="waiting-card">
+        <div class="card-eyebrow">
+          <span class="dot"></span>
+          WAITING ROOM
+        </div>
+        <h1 id="w-title" style="font-size:22px;">
+          Waiting for host…
+        </h1>
+        <p class="lead" id="w-lead">
+          Your request has been sent. You'll be admitted as soon as the host recognizes you.
+        </p>
+
+        <!-- Mini preview of what the host sees -->
+        <div class="person-row" id="w-you" style="margin: 8px 0 18px;">
+          <div class="avatar" id="w-avatar"></div>
+          <div class="info">
+            <div class="name" id="w-name">—</div>
+            <div class="sub" id="w-sub">PENDING ADMISSION</div>
+          </div>
+          <div class="actions">
+            <div class="dot" style="background:var(--warn); box-shadow:0 0 8px var(--warn); animation:cq-pulse 1.4s infinite; width:8px; height:8px; border-radius:50%;"></div>
+          </div>
+        </div>
+
+        <button class="btn btn-ghost btn-block" id="w-cancel" type="button">Cancel request</button>
+      </section>
+
+      <!-- Denied state -->
+      <section class="card slim hidden" id="denied-card">
+        <div class="card-eyebrow"><span class="dot"></span>NOT ADMITTED</div>
+        <h1 style="font-size:22px;">Request declined</h1>
+        <p class="lead">The host didn't admit this request. You can close this page.</p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      Cryptiq Secure Line · Guest entry · Voice only
+    </footer>
+  </div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/secure-line.js"></script>
+  <script>
+    window.CQ_FACETEC = {
+      server:    'https://54.211.82.159.sslip.io',
+      deviceKey: 'dNcawGQtDA4vGqAYgR2lUTmlmAivtfNT'
+    };
+  </script>
+  <script src="js/facetec-bridge.js"></script>
+  <script src="js/cq-connecting.js"></script>
+  <script>
+    cqIconsHydrate();
+
+    const params   = new URLSearchParams(location.search);
+    const lineId   = params.get('line');
+    const openTok  = params.get('g');
+    const line     = lineId ? cqLine.getLine(lineId) : null;
+
+    const $ = (id) => document.getElementById(id);
+    const cards = {
+      enroll:  $('enroll-card'),
+      waiting: $('waiting-card'),
+      denied:  $('denied-card'),
+    };
+    const showCard = (which) => {
+      Object.keys(cards).forEach(k => cards[k].classList.toggle('hidden', k !== which));
+    };
+
+    // Error path: bad/missing line or token
+    if (!line || !line.openToken || line.openToken !== openTok) {
+      $('g-eyebrow').textContent = 'LINK INVALID';
+      $('g-title').innerHTML = 'This guest link isn\'t valid';
+      $('g-lead').textContent = 'Ask the host for a fresh invitation.';
+      $('g-submit').disabled = true;
+      $('g-submit').style.display = 'none';
+      $('g-mode').style.display = 'none';
+      $('g-camera-pane').style.display = 'none';
+      $('g-upload-pane').style.display = 'none';
+      $('g-name').parentElement.style.display = 'none';
+    } else {
+      $('g-linename').textContent = line.name;
+    }
+
+    // ---- Camera / upload capture (same pattern as setup enroll) ----
+    const cap = {
+      mode: 'camera',
+      frame: null,
+      stream: null,
+      checkTimer: null,
+      video:  $('g-video'),
+      vf:     $('g-viewfinder'),
+      status: $('g-status'),
+      uploadPane: $('g-upload-pane'),
+      cameraPane: $('g-camera-pane'),
+      uploadPreview: $('g-upload-preview'),
+      uploadImg: $('g-upload-img'),
+      uploadPlaceholder: $('g-upload-placeholder'),
+      uploadStatus: $('g-upload-status'),
+      uploadInput: $('g-file'),
+      nameEl: $('g-name'),
+      submitBtn: $('g-submit'),
+      errEl: $('g-error'),
+    };
+
+    const setMode = (mode) => {
+      cap.mode = mode;
+      cap.frame = null;
+      cap.submitBtn.disabled = true;
+      document.querySelectorAll('#g-mode .mode-tab').forEach(b => b.classList.toggle('is-on', b.dataset.mode === mode));
+      if (mode === 'camera') {
+        cap.cameraPane.classList.remove('hidden');
+        cap.uploadPane.classList.add('hidden');
+        startCameraMode();
+      } else {
+        cap.cameraPane.classList.add('hidden');
+        cap.uploadPane.classList.remove('hidden');
+        stopCameraMode();
+        resetUploadPreview();
+      }
+    };
+
+    const startCameraMode = async () => {
+      cap.status.textContent = 'STARTING CAMERA…';
+      cap.status.className = 'viewfinder-status';
+      cap.vf.className = 'viewfinder';
+      try {
+        if (!cap.stream) cap.stream = await cqFacetec.openCamera(cap.video);
+      } catch {
+        cap.status.textContent = 'CAMERA BLOCKED — TRY UPLOAD INSTEAD';
+        cap.status.classList.add('is-denied');
+        return;
+      }
+      cap.status.textContent = 'CENTER FACE IN RETICLE';
+      startAutoCheck();
+    };
+
+    const stopCameraMode = () => {
+      if (cap.checkTimer) { clearInterval(cap.checkTimer); cap.checkTimer = null; }
+      cqFacetec.closeStream(cap.stream);
+      cap.stream = null;
+    };
+
+    const resetUploadPreview = () => {
+      cap.uploadImg.src = '';
+      cap.uploadImg.style.display = 'none';
+      cap.uploadPlaceholder.style.display = '';
+      cap.uploadStatus.textContent = 'TAP TO UPLOAD';
+      cap.uploadStatus.className = 'viewfinder-status';
+      cap.uploadPreview.className = 'viewfinder';
+    };
+
+    const handleUpload = async (file) => {
+      if (!file || !file.type.startsWith('image/')) return;
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      const resized = await cqFacetec.captureFromDataUrl(dataUrl, 480);
+      cap.frame = resized;
+      cap.uploadImg.src = resized;
+      cap.uploadImg.style.display = '';
+      cap.uploadPlaceholder.style.display = 'none';
+      cap.uploadStatus.textContent = 'PHOTO SET · ADD A NAME';
+      cap.uploadStatus.className = 'viewfinder-status is-verified';
+      cap.uploadPreview.className = 'viewfinder is-verified';
+      cap.submitBtn.disabled = !cap.nameEl.value.trim();
+    };
+
+    const startAutoCheck = () => {
+      const gateStart = Date.now();
+      const GRACE = 2500;
+      let checking = false;
+      cap.checkTimer = setInterval(async () => {
+        if (checking || cap.frame || cap.mode !== 'camera') return;
+        checking = true;
+        const inGrace = Date.now() - gateStart < GRACE;
+        try {
+          const faceN = await cqFacetec.detectFaceCount(cap.video);
+          if (faceN === 0) {
+            cap.status.textContent = inGrace ? 'CENTER FACE IN RETICLE' : 'NO FACE DETECTED';
+            cap.status.className = 'viewfinder-status is-verifying';
+            cap.vf.className = 'viewfinder is-verifying';
+            return;
+          }
+          if (faceN > 1) {
+            if (inGrace) {
+              cap.status.textContent = 'CENTER FACE IN RETICLE';
+              cap.status.className = 'viewfinder-status is-verifying';
+              cap.vf.className = 'viewfinder is-verifying';
+            } else {
+              cap.status.textContent = 'MULTIPLE FACES — CAPTURE PAUSED';
+              cap.status.className = 'viewfinder-status is-denied';
+              cap.vf.className = 'viewfinder is-denied';
+            }
+            return;
+          }
+          cap.status.textContent = 'VERIFYING LIVENESS…';
+          cap.vf.className = 'viewfinder is-verifying';
+          const r = await cqFacetec.gate(cap.video, null);
+          if (r.ok) {
+            cap.frame = r.frame;
+            cap.status.textContent = 'FACE CAPTURED · ADD A NAME';
+            cap.status.className = 'viewfinder-status is-verified';
+            cap.vf.className = 'viewfinder is-verified';
+            clearInterval(cap.checkTimer); cap.checkTimer = null;
+            cap.submitBtn.disabled = !cap.nameEl.value.trim();
+          }
+        } finally { checking = false; }
+      }, 900);
+    };
+
+    document.querySelectorAll('#g-mode .mode-tab').forEach(b => {
+      b.addEventListener('click', () => setMode(b.dataset.mode));
+    });
+    cap.uploadStatus.addEventListener('click', () => cap.uploadInput.click());
+    cap.uploadPreview.addEventListener('click', () => cap.uploadInput.click());
+    cap.uploadInput.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) handleUpload(f);
+    });
+    cap.nameEl.addEventListener('input', () => {
+      cap.submitBtn.disabled = !(cap.frame && cap.nameEl.value.trim());
+    });
+
+    // ---- Submit → waiting room ----
+
+    let myPendingId = null;
+
+    cap.submitBtn.addEventListener('click', () => {
+      if (!cap.frame || !cap.nameEl.value.trim()) return;
+      const r = cqLine.requestGuestJoin(lineId, openTok, {
+        name: cap.nameEl.value.trim(),
+        photo: cap.frame,
+      });
+      if (!r.ok) {
+        cap.errEl.style.display = '';
+        cap.errEl.textContent = 'Unable to submit: ' + (r.reason || 'unknown');
+        return;
+      }
+      myPendingId = r.pendingId;
+      stopCameraMode();
+      enterWaiting(cap.nameEl.value.trim(), cap.frame);
+    });
+
+    const enterWaiting = (name, photo) => {
+      showCard('waiting');
+      $('w-name').textContent = name;
+      if (photo) $('w-avatar').style.backgroundImage = `url(${photo})`;
+      $('w-sub').textContent = 'PENDING ADMISSION';
+    };
+
+    $('w-cancel').addEventListener('click', () => {
+      // Local-only cancel — mark as denied so host sees it vanish.
+      if (myPendingId) cqLine.denyPending(lineId, myPendingId);
+      location.href = '/';
+    });
+
+    // Poll for admission status (BroadcastChannel + localStorage fallback).
+    cqLine.onPresence((msg) => {
+      if (!msg || msg.lineId !== lineId || msg.pendingId !== myPendingId) return;
+      if (msg.type === 'guest-admitted' && msg.participantId) {
+        // Proceed into the call via the connecting animation.
+        const freshLine = cqLine.getLine(lineId);
+        cqLine.setSession({ lineId, participantId: msg.participantId, entry: 'guest', enteredAt: Date.now() });
+        const callUrl = cqLine.buildCallLink(freshLine, msg.participantId);
+        cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+      } else if (msg.type === 'guest-denied') {
+        showCard('denied');
+      }
+    });
+
+    // Also poll localStorage in case BroadcastChannel missed (e.g., different browsers).
+    setInterval(() => {
+      if (!myPendingId) return;
+      const entry = cqLine.getPending(lineId, myPendingId);
+      if (!entry) return;
+      if (entry.status === 'admitted') {
+        const p = (cqLine.getLine(lineId).participants || []).find(x => x.id === myPendingId);
+        if (p) {
+          cqLine.setSession({ lineId, participantId: p.id, entry: 'guest', enteredAt: Date.now() });
+          const callUrl = cqLine.buildCallLink(cqLine.getLine(lineId), p.id);
+          cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+          myPendingId = null;
+        }
+      } else if (entry.status === 'denied') {
+        showCard('denied');
+        myPendingId = null;
+      }
+    }, 1800);
+
+    // Kick camera mode
+    if (line && line.openToken === openTok) setMode('camera');
+  </script>
+</body>
+</html>

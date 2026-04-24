@@ -1328,6 +1328,48 @@ button { font-family: inherit; }
   animation: cq-pulse 1.2s infinite;
 }
 
+/* Admission request — shown to the host when a guest submits via open link */
+.admit-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(46,196,182,0.08);
+  border-top: 1px solid var(--accent-line);
+  border-bottom: 1px solid var(--accent-line);
+  animation: cq-badge-in 0.3s ease;
+}
+.admit-strip .avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--bg-soft);
+  border: 1px solid var(--accent-line);
+  flex-shrink: 0;
+}
+.admit-strip .info { flex: 1; min-width: 0; }
+.admit-strip .info .name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.admit-strip .info .sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.admit-strip .actions { display: flex; gap: 8px; flex-shrink: 0; }
+@media (max-width: 640px) {
+  .admit-strip { padding: 8px 12px; gap: 10px; }
+  .admit-strip .avatar { width: 32px; height: 32px; }
+  .admit-strip .info .name { font-size: 12px; }
+  .admit-strip .info .sub { font-size: 9px; }
+}
+
 /* Inline sticky state strip. Sits between call-header and tile-grid,
    so it can never overlap tiles, always visible while state != verified. */
 .state-banner {

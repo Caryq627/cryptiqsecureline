@@ -47,6 +47,33 @@
     return canvas.toDataURL('image/jpeg', 0.82);
   };
 
+  // Center-crop at a specific zoom level so users at different distances
+  // from the camera all get picked up. `far` sends the full frame (user can
+  // sit back), `mid` zooms in on the center, `near` zooms in further for a
+  // user sitting close. Cycling through these across ticks means the
+  // liveness/match pipeline sees the face at a usable size regardless of
+  // how the user is sitting.
+  const ZOOM_CROPS = { far: 1.0, mid: 0.70, near: 0.48 };
+  const ZOOM_LEVELS = ['far', 'mid', 'near'];
+
+  const captureFrameAtZoom = (video, zoom, maxSize = 480) => {
+    if (!video || !video.videoWidth) return null;
+    const w = video.videoWidth, h = video.videoHeight;
+    const ratio = ZOOM_CROPS[zoom] != null ? ZOOM_CROPS[zoom] : 1.0;
+    const side = Math.min(w, h);
+    const cropSide = Math.max(64, Math.round(side * ratio));
+    const sx = Math.round((w - cropSide) / 2);
+    const sy = Math.round((h - cropSide) / 2);
+    const outSize = Math.min(maxSize, cropSide);
+    const canvas = document.createElement('canvas');
+    canvas.width = outSize; canvas.height = outSize;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(outSize, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, sx, sy, cropSide, cropSide, 0, 0, outSize, outSize);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  };
+
   const captureFromDataUrl = async (dataUrl, maxSize = 480) => {
     if (!dataUrl) return null;
     const img = new Image();
@@ -249,29 +276,38 @@
     }
   };
 
-  // One-shot gate: liveness + optional face match. Used by enroll + join.
+  // One-shot gate: liveness + optional face match. Tries the far / mid /
+  // near crops in sequence so the user can be at any reasonable distance
+  // from the camera and still pass. First successful zoom wins.
   const gate = async (video, refPhoto) => {
-    const frame = captureFrame(video, 480);
-    if (!frame) return { ok: false, reason: 'no-frame' };
     const faceN = await detectFaceCount(video);
     if (faceN !== null && faceN === 0) {
-      return { ok: false, reason: 'no-face', frame };
+      return { ok: false, reason: 'no-face' };
     }
     if (faceN !== null && faceN > 1) {
-      return { ok: false, reason: 'multiple-faces', frame, faces: faceN };
+      return { ok: false, reason: 'multiple-faces', faces: faceN };
     }
-    const live = await liveness2D(frame);
-    if (!live.success || (live.isLikelyRealPerson === false)) {
-      return { ok: false, reason: 'liveness-failed', frame };
-    }
-    if (refPhoto) {
-      const ref = await captureFromDataUrl(refPhoto);
-      const m = await match2D(frame, ref);
-      if (!m.success || (typeof m.matchLevel === 'number' && m.matchLevel < config.minMatchLevel)) {
-        return { ok: false, reason: 'no-match', frame };
+
+    const ref = refPhoto ? await captureFromDataUrl(refPhoto) : null;
+    let lastReason = 'liveness-failed';
+    let lastFrame  = null;
+
+    for (const zoom of ZOOM_LEVELS) {
+      const frame = captureFrameAtZoom(video, zoom, 480);
+      if (!frame) continue;
+      lastFrame = frame;
+
+      const live = await liveness2D(frame);
+      if (!live || !live.success) { lastReason = 'liveness-failed'; continue; }
+
+      if (ref) {
+        const m = await match2D(frame, ref);
+        if (m.noFace) { lastReason = 'no-face'; continue; }
+        if (!m.success) { lastReason = 'no-match'; continue; }
       }
+      return { ok: true, frame, zoom };
     }
-    return { ok: true, frame };
+    return { ok: false, reason: lastReason, frame: lastFrame };
   };
 
   // ---------- continuous background liveness ----------
@@ -301,6 +337,7 @@
     let livenessFailStreak = 0;
     let lastState = 'verifying';
     let forced = null; // { state, until } — demo override
+    let zoomCursor = 0;  // rotates 0..2 to cycle far/mid/near each tick
     const startedAt = Date.now();
 
     const emit = (state, meta) => {
@@ -358,8 +395,12 @@
       }
       awayStreak = 0;
 
-      // Exactly 1 face (or FaceDetector unavailable). Run 2D liveness.
-      const frame = captureFrame(video, 320);
+      // Exactly 1 face (or FaceDetector unavailable). Run 2D liveness on
+      // the current zoom in the far/mid/near rotation so the user can be
+      // at any distance and still get picked up over a few ticks.
+      const zoom = ZOOM_LEVELS[zoomCursor % ZOOM_LEVELS.length];
+      zoomCursor++;
+      const frame = captureFrameAtZoom(video, zoom, 320);
       const live = await liveness2D(frame);
       if (!live || !live.success) {
         livenessFailStreak++;

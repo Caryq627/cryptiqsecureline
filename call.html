@@ -57,6 +57,7 @@
     </header>
 
     <div id="state-banner-slot"></div>
+    <div id="admit-slot"></div>
 
     <main class="tile-grid" id="tile-grid" aria-live="polite"></main>
 
@@ -668,6 +669,67 @@
         else enterHold();
       }
     });
+
+    // ---------- Guest admission (open-link requests) ----------
+    //
+    // Only the host sees this. When a guest submits via guest.html, a
+    // 'guest-request' presence message fires and we render an admit/deny
+    // strip. Admitting creates a participant, broadcasts the decision,
+    // and the guest proceeds into the call via cqConnecting.
+
+    const admitSlot = document.getElementById('admit-slot');
+    const isHost = line.createdBy === me.id;
+
+    const renderAdmitStrip = () => {
+      if (!isHost) return;
+      const pending = cqLine.getPending(line.id) || [];
+      if (!pending.length) { admitSlot.innerHTML = ''; return; }
+      // Show oldest pending request first.
+      const entry = pending[0];
+      const safeName = (entry.name || 'Guest').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      admitSlot.innerHTML = `
+        <div class="admit-strip" role="region" aria-label="Guest admission">
+          <div class="avatar"${entry.photo ? ` style="background-image:url(${entry.photo})"` : ''}></div>
+          <div class="info">
+            <div class="name">${safeName}</div>
+            <div class="sub">REQUESTING TO JOIN · ${pending.length > 1 ? (pending.length - 1) + ' MORE WAITING' : 'OPEN GUEST LINK'}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost btn-sm" data-role="deny" type="button">
+              <span data-icon="x"></span> Deny
+            </button>
+            <button class="btn btn-primary btn-sm" data-role="admit" type="button">
+              <span data-icon="check"></span> Admit
+            </button>
+          </div>
+        </div>
+      `;
+      cqIconsHydrate(admitSlot);
+      admitSlot.querySelector('[data-role="admit"]').addEventListener('click', () => {
+        const admitted = cqLine.admitPending(line.id, entry.id);
+        if (admitted) {
+          // Materialize the new participant as a tile for everyone.
+          const freshLine = cqLine.getLine(line.id);
+          const newP = freshLine.participants.find(p => p.id === entry.id);
+          if (newP && !tilesById.has(newP.id)) buildTile(newP);
+        }
+        renderAdmitStrip();
+      });
+      admitSlot.querySelector('[data-role="deny"]').addEventListener('click', () => {
+        cqLine.denyPending(line.id, entry.id);
+        renderAdmitStrip();
+      });
+    };
+
+    // React to presence events: new requests, cross-tab admit/deny.
+    cqLine.onPresence((msg) => {
+      if (!msg || msg.lineId !== line.id) return;
+      if (msg.type === 'guest-request' || msg.type === 'guest-admitted' || msg.type === 'guest-denied') {
+        renderAdmitStrip();
+      }
+    });
+    // Initial render in case there's already a pending entry when this tab loads.
+    renderAdmitStrip();
 
     // ---------- Demo panel (only visible when ?demo=1) ----------
 

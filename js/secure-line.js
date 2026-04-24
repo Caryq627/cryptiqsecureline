@@ -154,6 +154,95 @@
     saveLine(line);
   };
 
+  // ---------- open guest link + pending admissions ----------
+  //
+  // An "open" link lets anyone click, enter a name + photo, and request
+  // to join. The host sees the request on the call page and admits or
+  // denies. Useful for ad-hoc invites where you don't know the attendee
+  // list in advance.
+
+  const mintOpenLink = (lineId) => {
+    const line = getLine(lineId);
+    if (!line) throw new Error('Line not found');
+    if (!line.openToken) line.openToken = randToken(20);
+    if (!Array.isArray(line.pending)) line.pending = [];
+    saveLine(line);
+    return line.openToken;
+  };
+
+  const revokeOpenLink = (lineId) => {
+    const line = getLine(lineId);
+    if (!line) return;
+    delete line.openToken;
+    saveLine(line);
+  };
+
+  const buildGuestLink = (line) => {
+    const url = new URL('guest.html', location.href);
+    url.searchParams.set('line', line.id);
+    url.searchParams.set('g', line.openToken);
+    return url.toString();
+  };
+
+  // Guest submits name + photo. Creates a pending record on the line and
+  // broadcasts a request so any host tab can react.
+  const requestGuestJoin = (lineId, token, { name, photo }) => {
+    const line = getLine(lineId);
+    if (!line) return { ok: false, reason: 'line-missing' };
+    if (!line.openToken || token !== line.openToken) return { ok: false, reason: 'invalid-token' };
+    if (!Array.isArray(line.pending)) line.pending = [];
+    const pid = randToken(10);
+    line.pending.push({
+      id: pid,
+      name: String(name || '').trim() || 'Guest',
+      photo: photo || null,
+      status: 'pending',
+      requestedAt: Date.now(),
+    });
+    saveLine(line);
+    emitPresence({ type: 'guest-request', lineId, pendingId: pid });
+    return { ok: true, pendingId: pid };
+  };
+
+  const getPending = (lineId, pendingId) => {
+    const line = getLine(lineId);
+    if (!line || !Array.isArray(line.pending)) return null;
+    if (pendingId) return line.pending.find(p => p.id === pendingId) || null;
+    return line.pending.filter(p => p.status === 'pending');
+  };
+
+  const admitPending = (lineId, pendingId) => {
+    const line = getLine(lineId);
+    if (!line || !Array.isArray(line.pending)) return null;
+    const entry = line.pending.find(p => p.id === pendingId);
+    if (!entry || entry.status !== 'pending') return null;
+    entry.status = 'admitted';
+    entry.admittedAt = Date.now();
+    // Promote the guest into a real participant.
+    line.participants.push({
+      id: entry.id,
+      name: entry.name,
+      photo: entry.photo,
+      role: 'guest',
+      enrolledAt: entry.admittedAt,
+    });
+    saveLine(line);
+    emitPresence({ type: 'guest-admitted', lineId, pendingId, participantId: entry.id });
+    return entry;
+  };
+
+  const denyPending = (lineId, pendingId) => {
+    const line = getLine(lineId);
+    if (!line || !Array.isArray(line.pending)) return null;
+    const entry = line.pending.find(p => p.id === pendingId);
+    if (!entry) return null;
+    entry.status = 'denied';
+    entry.deniedAt = Date.now();
+    saveLine(line);
+    emitPresence({ type: 'guest-denied', lineId, pendingId });
+    return entry;
+  };
+
   const findParticipantByToken = (lineId, token) => {
     const line = getLine(lineId);
     if (!line) return null;
@@ -288,6 +377,8 @@
     getLine, saveLine, deleteLine, createLine,
     addParticipant, removeParticipant, setHost,
     mintOneTime, consumeOneTime, revokeOneTime, findParticipantByToken,
+    mintOpenLink, revokeOpenLink, buildGuestLink,
+    requestGuestJoin, getPending, admitPending, denyPending,
     buildSharedLink, buildOneTimeLink, buildCallLink,
     onPresence, emitPresence,
     setSession, getSession, clearSession,
