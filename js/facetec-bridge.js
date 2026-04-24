@@ -106,6 +106,31 @@
   // FaceTec server is unreachable — UI keeps working instead of false-alarming.
   let netFailStreak = 0;
   const NET_FAIL_SOFT_PASS_AFTER = 3;
+  let _loggedLiveness = false;
+  let _loggedMatch    = false;
+
+  // Normalize the liveness response — FaceTec Dashboard builds use a few
+  // different shapes across versions. Treat a 200 OK as a pass unless the
+  // server explicitly rejects it.
+  const interpretLiveness = (data) => {
+    if (!data || typeof data !== 'object') return { ok: false, reason: 'no-body' };
+    if (data.success === false)           return { ok: false, reason: data.errorMessage || 'server-said-no' };
+    if (data.isLikelyRealPerson === false)return { ok: false, reason: 'not-real-person' };
+    if (data.error === true)              return { ok: false, reason: 'error-flag' };
+    if (typeof data.liveness2DStatusEnumInt === 'number' && data.liveness2DStatusEnumInt !== 0) {
+      return { ok: false, reason: 'liveness-status-' + data.liveness2DStatusEnumInt };
+    }
+    return { ok: true };
+  };
+
+  const interpretMatch = (data, minLevel) => {
+    if (!data || typeof data !== 'object') return { ok: false, reason: 'no-body' };
+    if (data.success === false)            return { ok: false, reason: data.errorMessage || 'server-said-no' };
+    if (typeof data.matchLevel === 'number' && data.matchLevel < minLevel) {
+      return { ok: false, reason: 'match-level-' + data.matchLevel };
+    }
+    return { ok: true, matchLevel: data.matchLevel };
+  };
 
   const liveness2D = async (frameDataUrl) => {
     if (config.simMode) {
@@ -123,11 +148,21 @@
         return { success: false, httpStatus: res.status };
       }
       netFailStreak = 0;
-      return await res.json();
+      const data = await res.json();
+      if (!_loggedLiveness) {
+        _loggedLiveness = true;
+        try { console.log('[cq/facetec] first /liveness-2d response →', data); } catch {}
+      }
+      const verdict = interpretLiveness(data);
+      // Map back to the shape the rest of the code expects.
+      return {
+        success: verdict.ok,
+        isLikelyRealPerson: verdict.ok,
+        reason: verdict.reason,
+        raw: data,
+      };
     } catch (e) {
       netFailStreak++;
-      // Don't penalize the user for network/CORS hiccups beyond the first
-      // couple — after sustained failures we soft-pass so the UI keeps moving.
       if (netFailStreak > NET_FAIL_SOFT_PASS_AFTER) {
         return { success: true, isLikelyRealPerson: true, _softPass: true };
       }
@@ -150,10 +185,19 @@
         }),
       }, 18_000);
       if (!res.ok) return { success: false, httpStatus: res.status };
-      return await res.json();
+      const data = await res.json();
+      if (!_loggedMatch) {
+        _loggedMatch = true;
+        try { console.log('[cq/facetec] first /match-2d-2d response →', data); } catch {}
+      }
+      const verdict = interpretMatch(data, config.minMatchLevel);
+      return {
+        success: verdict.ok,
+        matchLevel: verdict.matchLevel,
+        reason: verdict.reason,
+        raw: data,
+      };
     } catch (e) {
-      // Soft-pass on network error — assume identity OK rather than falsely
-      // flagging the user as an intruder due to a flaky connection.
       return { success: true, matchLevel: config.minMatchLevel, _softPass: true };
     }
   };
