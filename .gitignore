@@ -1,0 +1,12 @@
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+.playwright-mcp/
+.idea/
+.vscode/
+# Local dev artifacts — never commit screenshots/tmp PNGs
+sl*.png
+secureline-*.png
+tmp-*.png
+/tmp/

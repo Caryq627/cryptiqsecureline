@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Set up a Secure Line — Cryptiq</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/cryptiq.css" />
+  <style>
+    .capture-overlay {
+      position: fixed; inset: 0;
+      background: rgba(11,14,18,0.86);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 40;
+    }
+    .capture-overlay.is-open { display: flex; }
+    .capture-card {
+      background: var(--bg-raise);
+      border: 1px solid var(--accent-line);
+      border-radius: var(--r-card);
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: var(--glow-strong);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <header class="top-rail">
+      <a class="brand" href="index.html">
+        <span class="mark" data-icon="phoneLock"></span>
+        <span class="wordmark">
+          <span class="big">CRYPTIQ</span>
+          <span class="sml">SECURE LINE</span>
+        </span>
+      </a>
+      <div class="rail-meta">
+        <span class="dot"></span>
+        <span id="sim-tag">SETUP</span>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
+      </div>
+    </header>
+
+    <main class="main-centered">
+      <section class="card wide">
+        <div class="step-rail" aria-hidden="true">
+          <span class="dot is-active" id="step-1"></span>
+          <span class="dot" id="step-2"></span>
+          <span class="dot" id="step-3"></span>
+        </div>
+
+        <div class="card-eyebrow">
+          <span class="dot"></span>
+          NEW SECURE LINE
+        </div>
+
+        <h1 id="step-title">Name your <span class="accent">Secure Line</span>.</h1>
+        <p class="lead" id="step-sub">Give it something short your attendees will recognize.</p>
+
+        <div class="field">
+          <label for="line-name">Line name</label>
+          <input id="line-name" type="text" maxlength="60" placeholder="Board call — Q2 planning" autocomplete="off" />
+        </div>
+
+        <!-- participants list -->
+        <div id="people-section" style="margin-top:6px;">
+          <label style="display:block; font-size:11px; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.15em; color:var(--fg-muted); margin-bottom:10px;">Attendees</label>
+          <div class="people" id="people-list"></div>
+
+          <button class="btn btn-ghost btn-block" id="add-person" type="button">
+            <span data-icon="plus"></span>
+            Enroll an attendee by face
+          </button>
+        </div>
+
+        <div id="links-section" class="hidden" style="margin-top:28px;">
+          <div class="link-box">
+            <button class="btn btn-ghost btn-sm copy" id="copy-shared" type="button">
+              <span data-icon="copy"></span> Copy
+            </button>
+            <div class="label">Shared line link · non-expiring</div>
+            <div class="url" id="shared-link">—</div>
+          </div>
+          <p style="font-size:12px; color:var(--fg-muted); margin:-8px 0 20px;">
+            Or send a one-time expiring link to a specific attendee from the row below.
+          </p>
+        </div>
+
+        <div class="row-end" style="margin-top:24px; gap:10px;">
+          <button class="btn btn-ghost" id="back-btn" type="button" style="display:none;">Back</button>
+          <button class="btn btn-primary" id="next-btn" type="button" disabled>
+            <span data-icon="arrowRight"></span>
+            Next
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      Attendees verify with a face-gate before joining · Voice only on call
+    </footer>
+  </div>
+
+  <!-- Capture overlay -->
+  <div class="capture-overlay" id="capture-overlay" aria-hidden="true">
+    <div class="capture-card">
+      <div class="card-eyebrow">
+        <span class="dot"></span>
+        <span id="cap-eyebrow">ENROLL ATTENDEE</span>
+      </div>
+      <h2 id="cap-heading" style="font-size:22px; margin:0 0 14px; font-weight:600;">Capture their face</h2>
+
+      <!-- Mode tabs: live capture vs upload -->
+      <div class="pill-select" id="cap-mode" style="margin-bottom: 16px; width: 100%; justify-content: center;">
+        <button type="button" class="is-on" data-mode="camera">
+          <span data-icon="camera" style="vertical-align:-2px; display:inline-flex; width:12px; height:12px;"></span>
+          &nbsp;LIVE CAPTURE
+        </button>
+        <button type="button" data-mode="upload">
+          <span data-icon="upload" style="vertical-align:-2px; display:inline-flex; width:12px; height:12px;"></span>
+          &nbsp;UPLOAD PHOTO
+        </button>
+      </div>
+
+      <!-- Camera mode pane -->
+      <div id="cap-camera-pane">
+        <div class="viewfinder" id="cap-viewfinder">
+          <video id="cap-video" autoplay playsinline muted></video>
+          <div class="reticle"></div>
+          <div class="scanline"></div>
+        </div>
+        <div class="viewfinder-status" id="cap-status">CENTER FACE IN RETICLE</div>
+      </div>
+
+      <!-- Upload mode pane -->
+      <div id="cap-upload-pane" class="hidden">
+        <div class="viewfinder" id="cap-upload-preview" style="background: var(--bg-deep); display: flex; align-items: center; justify-content: center;">
+          <div id="cap-upload-placeholder" style="text-align: center; color: var(--fg-dim); padding: 24px;">
+            <div style="width:36px; height:36px; margin:0 auto 10px; color:var(--accent);" data-icon="upload"></div>
+            <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.2em; text-transform:uppercase;">Drop or tap to upload</div>
+          </div>
+          <img id="cap-upload-img" alt="" style="display:none; width:100%; height:100%; object-fit: cover;" />
+        </div>
+        <input id="cap-file" type="file" accept="image/*" style="display:none" />
+        <div class="viewfinder-status" id="cap-upload-status" style="cursor:pointer;">TAP TO UPLOAD</div>
+      </div>
+
+      <div class="field">
+        <label for="cap-name">Attendee name</label>
+        <input id="cap-name" type="text" maxlength="48" placeholder="Jane Chen" autocomplete="off" />
+      </div>
+
+      <div class="row-end">
+        <button class="btn btn-ghost" id="cap-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="cap-save" type="button" disabled>
+          <span data-icon="userCheck"></span>
+          Enroll
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/secure-line.js"></script>
+  <script src="js/facetec-bridge.js"></script>
+  <script>
+    cqIconsHydrate();
+
+    // ---------- State ----------
+
+    let line = null;
+    let step = 1;
+
+    const $ = (id) => document.getElementById(id);
+    const el = {
+      title: $('step-title'), sub: $('step-sub'),
+      nameInput: $('line-name'),
+      peopleList: $('people-list'),
+      addBtn: $('add-person'),
+      peopleSection: $('people-section'),
+      linksSection: $('links-section'),
+      sharedLink: $('shared-link'),
+      copyShared: $('copy-shared'),
+      nextBtn: $('next-btn'),
+      backBtn: $('back-btn'),
+      step1: $('step-1'), step2: $('step-2'), step3: $('step-3'),
+      simTag: $('sim-tag'),
+    };
+
+    el.simTag.textContent = cqFacetec.simMode ? 'SETUP · SIM' : 'SETUP · LIVE';
+
+    // Per-row mint prefs are remembered until the link is created.
+    const mintPrefs = new Map(); // participantId → { expiresKey, singleUse, panelOpen }
+    const prefsFor = (pid) => {
+      if (!mintPrefs.has(pid)) mintPrefs.set(pid, { expiresKey: '24h', singleUse: true, panelOpen: false });
+      return mintPrefs.get(pid);
+    };
+
+    // ---------- Step rendering ----------
+
+    const renderStep = () => {
+      [el.step1, el.step2, el.step3].forEach((d, i) => {
+        d.classList.toggle('is-active', i + 1 === step);
+        d.classList.toggle('is-done', i + 1 < step);
+      });
+      el.backBtn.style.display = step > 1 ? 'inline-flex' : 'none';
+
+      if (step === 1) {
+        el.title.innerHTML = 'Name your <span class="accent">Secure Line</span>.';
+        el.sub.textContent = 'Give it something short your attendees will recognize.';
+        el.nameInput.parentElement.classList.remove('hidden');
+        el.peopleSection.classList.add('hidden');
+        el.linksSection.classList.add('hidden');
+        el.nextBtn.innerHTML = '<span data-icon="arrowRight"></span> Next';
+        cqIconsHydrate(el.nextBtn);
+        el.nextBtn.disabled = !el.nameInput.value.trim();
+      } else if (step === 2) {
+        el.title.innerHTML = 'Enroll your <span class="accent">attendees</span>.';
+        el.sub.textContent = 'Each face becomes their key to this line. Add yourself first — you\'re the host.';
+        el.nameInput.parentElement.classList.add('hidden');
+        el.peopleSection.classList.remove('hidden');
+        el.linksSection.classList.add('hidden');
+        el.nextBtn.innerHTML = 'Generate links <span data-icon="arrowRight"></span>';
+        cqIconsHydrate(el.nextBtn);
+        renderPeople();
+        el.nextBtn.disabled = !line || line.participants.length === 0;
+      } else if (step === 3) {
+        el.title.innerHTML = 'Share your <span class="accent">Secure Line</span>.';
+        el.sub.textContent = 'Paste the shared link anywhere, or send each attendee their own one-time link.';
+        el.nameInput.parentElement.classList.add('hidden');
+        el.peopleSection.classList.remove('hidden');
+        el.linksSection.classList.remove('hidden');
+        el.addBtn.classList.add('hidden');
+        el.sharedLink.textContent = cqLine.buildSharedLink(line);
+        renderPeople(true);
+        el.nextBtn.innerHTML = '<span data-icon="phone"></span> Enter the line';
+        cqIconsHydrate(el.nextBtn);
+        el.nextBtn.disabled = false;
+      }
+    };
+
+    // ---------- Participant rendering ----------
+
+    const renderPeople = (withLinks = false) => {
+      el.peopleList.innerHTML = '';
+      if (!line || !line.participants.length) return;
+      line.participants.forEach((p, idx) => {
+        const row = document.createElement('div');
+        row.className = 'person-row';
+        row.dataset.id = p.id;
+
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        if (p.photo) avatar.style.backgroundImage = `url(${p.photo})`;
+
+        const info = document.createElement('div');
+        info.className = 'info';
+        const existingToken = withLinks ? findActiveToken(p.id) : null;
+        const subText = existingToken
+          ? `link · ${cqLine.formatDurationLabel(preset(existingToken)).toUpperCase()} · ${existingToken.singleUse ? 'SINGLE-USE' : 'MULTI-USE'}`
+          : `enrolled · ${cqLine.formatAge(p.enrolledAt)}`;
+        info.innerHTML = `
+          <div class="name">${escapeHtml(p.name)}${idx === 0 ? ' <span style="color:var(--accent); font-size:10px; font-family:var(--font-mono); letter-spacing:0.14em; margin-left:6px;">HOST</span>' : ''}</div>
+          <div class="sub">${subText}</div>
+        `;
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        if (withLinks) {
+          const mintBtn = document.createElement('button');
+          mintBtn.className = 'icon-btn';
+          mintBtn.title = existingToken ? 'Edit link options' : 'Create attendee link';
+          mintBtn.innerHTML = existingToken ? cqIcons.refresh : cqIcons.link;
+          mintBtn.addEventListener('click', () => togglePanel(p.id));
+          actions.appendChild(mintBtn);
+        } else {
+          const del = document.createElement('button');
+          del.className = 'icon-btn';
+          del.title = 'Remove';
+          del.innerHTML = cqIcons.trash;
+          del.addEventListener('click', () => {
+            if (!confirm(`Remove ${p.name}?`)) return;
+            cqLine.removeParticipant(line.id, p.id);
+            line = cqLine.getLine(line.id);
+            renderPeople();
+            el.nextBtn.disabled = line.participants.length === 0;
+          });
+          actions.appendChild(del);
+        }
+
+        row.appendChild(avatar);
+        row.appendChild(info);
+        row.appendChild(actions);
+        el.peopleList.appendChild(row);
+
+        if (withLinks) {
+          const prefs = prefsFor(p.id);
+          const panel = buildMintPanel(p, prefs, existingToken);
+          el.peopleList.appendChild(panel);
+          if (existingToken) {
+            const box = buildLinkBox(p, existingToken);
+            el.peopleList.appendChild(box);
+          }
+        }
+      });
+    };
+
+    const findActiveToken = (pid) => {
+      if (!line) return null;
+      for (const [tid, t] of Object.entries(line.oneTimeTokens)) {
+        if (t.participantId !== pid) continue;
+        if (t.singleUse && t.usedAt) continue;
+        if (t.expiresAt && Date.now() > t.expiresAt) continue;
+        return { tokenId: tid, ...t };
+      }
+      return null;
+    };
+
+    const preset = (token) => {
+      if (!token) return '24h';
+      if (!token.expiresAt) return null;
+      return token.expiresAt - token.createdAt;
+    };
+
+    const buildMintPanel = (p, prefs, existingToken) => {
+      const panel = document.createElement('div');
+      panel.className = 'mint-panel';
+      if (prefs.panelOpen) panel.classList.add('is-open');
+
+      const DURATIONS = [
+        { key: '1h',  label: '1 hour'  },
+        { key: '24h', label: '24 hours'},
+        { key: '7d',  label: '7 days'  },
+        { key: '30d', label: '30 days' },
+        { key: 'never', label: 'Never' },
+      ];
+
+      const expPills = DURATIONS.map(d =>
+        `<button type="button" data-exp="${d.key}" class="${prefs.expiresKey === d.key ? 'is-on' : ''}">${d.label}</button>`
+      ).join('');
+
+      panel.innerHTML = `
+        <div class="mint-row">
+          <label>Expires</label>
+          <div class="pill-select exp-select">${expPills}</div>
+        </div>
+        <div class="mint-row" style="justify-content: space-between;">
+          <label class="toggle">
+            <input type="checkbox" class="single-use" ${prefs.singleUse ? 'checked' : ''}>
+            <span class="track"></span>
+            <span>Single-use only</span>
+          </label>
+          <div style="display:flex; gap:8px;">
+            ${existingToken ? `<button class="btn btn-ghost btn-sm revoke-btn" type="button"><span data-icon="trash"></span> Revoke</button>` : ''}
+            <button class="btn btn-primary btn-sm mint-btn" type="button">
+              <span data-icon="sparkles"></span>
+              ${existingToken ? 'Replace link' : 'Create link'}
+            </button>
+          </div>
+        </div>
+      `;
+      cqIconsHydrate(panel);
+
+      panel.querySelectorAll('.exp-select button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          prefs.expiresKey = btn.dataset.exp;
+          panel.querySelectorAll('.exp-select button').forEach(b => b.classList.toggle('is-on', b === btn));
+        });
+      });
+      panel.querySelector('.single-use').addEventListener('change', (e) => {
+        prefs.singleUse = e.target.checked;
+      });
+      panel.querySelector('.mint-btn').addEventListener('click', () => mintForParticipant(p, prefs));
+      if (existingToken) {
+        panel.querySelector('.revoke-btn').addEventListener('click', () => {
+          cqLine.revokeOneTime(line.id, existingToken.tokenId);
+          line = cqLine.getLine(line.id);
+          renderPeople(true);
+          toast('Link revoked');
+        });
+      }
+
+      return panel;
+    };
+
+    const buildLinkBox = (p, token) => {
+      const url = cqLine.buildOneTimeLink(line, token.tokenId);
+      const dur = cqLine.formatDurationLabel(preset(token));
+      const box = document.createElement('div');
+      box.className = 'link-box compact';
+      box.innerHTML = `
+        <button class="btn btn-ghost btn-sm copy" type="button">
+          <span data-icon="copy"></span> Copy
+        </button>
+        <div class="label">
+          ${token.singleUse ? 'SINGLE-USE' : 'MULTI-USE'} ·
+          ${token.expiresAt ? `${cqLine.formatExpiresIn(token.expiresAt)}` : 'NEVER EXPIRES'} ·
+          ${dur.toUpperCase()}
+        </div>
+        <div class="url">${url}</div>
+      `;
+      cqIconsHydrate(box);
+      box.querySelector('.copy').addEventListener('click', async () => {
+        await cqLine.copyToClipboard(url);
+        toast('Link copied');
+      });
+      return box;
+    };
+
+    const togglePanel = (pid) => {
+      const prefs = prefsFor(pid);
+      prefs.panelOpen = !prefs.panelOpen;
+      // close others so only one panel is open at a time
+      if (prefs.panelOpen) {
+        for (const [k, v] of mintPrefs) { if (k !== pid) v.panelOpen = false; }
+      }
+      renderPeople(true);
+    };
+
+    const mintForParticipant = async (p, prefs) => {
+      const expMs = cqLine.DURATION_PRESETS[prefs.expiresKey];
+      const token = cqLine.mintOneTime(line.id, p.id, {
+        expiresInMs: expMs,
+        singleUse: prefs.singleUse,
+      });
+      line = cqLine.getLine(line.id);
+      const url = cqLine.buildOneTimeLink(line, token);
+      await cqLine.copyToClipboard(url);
+      prefs.panelOpen = false;
+      renderPeople(true);
+      const durLabel = (prefs.expiresKey === 'never') ? 'no expiry' : `expires in ${prefs.expiresKey}`;
+      toast(`Link copied · ${prefs.singleUse ? 'single-use' : 'multi-use'} · ${durLabel}`);
+    };
+
+    // ---------- Capture flow ----------
+
+    const cap = {
+      overlay: $('capture-overlay'),
+      video:   $('cap-video'),
+      status:  $('cap-status'),
+      name:    $('cap-name'),
+      save:    $('cap-save'),
+      cancel:  $('cap-cancel'),
+      viewfinder: $('cap-viewfinder'),
+      modeTabs: $('cap-mode'),
+      cameraPane: $('cap-camera-pane'),
+      uploadPane: $('cap-upload-pane'),
+      uploadPreview: $('cap-upload-preview'),
+      uploadImg: $('cap-upload-img'),
+      uploadPlaceholder: $('cap-upload-placeholder'),
+      uploadStatus: $('cap-upload-status'),
+      uploadInput: $('cap-file'),
+    };
+
+    let capStream = null;
+    let capFrame = null;
+    let capMode = 'camera';
+    let capCheckTimer = null;
+
+    const openCapture = async () => {
+      cap.overlay.classList.add('is-open');
+      cap.overlay.setAttribute('aria-hidden', 'false');
+      cap.name.value = '';
+      cap.save.disabled = true;
+      capFrame = null;
+      setMode('camera');
+    };
+
+    const setMode = (mode) => {
+      capMode = mode;
+      capFrame = null;
+      cap.save.disabled = true;
+      // toggle tab state
+      cap.modeTabs.querySelectorAll('button').forEach(b => b.classList.toggle('is-on', b.dataset.mode === mode));
+      if (mode === 'camera') {
+        cap.cameraPane.classList.remove('hidden');
+        cap.uploadPane.classList.add('hidden');
+        startCameraMode();
+      } else {
+        cap.cameraPane.classList.add('hidden');
+        cap.uploadPane.classList.remove('hidden');
+        stopCameraMode();
+        resetUploadPreview();
+      }
+    };
+
+    const startCameraMode = async () => {
+      cap.status.textContent = 'STARTING CAMERA…';
+      cap.status.className = 'viewfinder-status';
+      cap.viewfinder.className = 'viewfinder';
+      try {
+        if (!capStream) capStream = await cqFacetec.openCamera(cap.video);
+      } catch (e) {
+        cap.status.textContent = 'CAMERA BLOCKED — TRY UPLOAD INSTEAD';
+        cap.status.classList.add('is-denied');
+        return;
+      }
+      cap.status.textContent = 'CENTER FACE IN RETICLE';
+      startAutoCheck();
+    };
+
+    const stopCameraMode = () => {
+      if (capCheckTimer) { clearInterval(capCheckTimer); capCheckTimer = null; }
+      cqFacetec.closeStream(capStream);
+      capStream = null;
+    };
+
+    const resetUploadPreview = () => {
+      cap.uploadImg.src = '';
+      cap.uploadImg.style.display = 'none';
+      cap.uploadPlaceholder.style.display = '';
+      cap.uploadStatus.textContent = 'TAP TO UPLOAD';
+      cap.uploadStatus.className = 'viewfinder-status';
+      cap.uploadPreview.className = 'viewfinder';
+      cap.uploadPreview.style.background = 'var(--bg-deep)';
+    };
+
+    const handleUpload = async (file) => {
+      if (!file || !file.type.startsWith('image/')) return;
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      // Downscale to <= 480px for storage size.
+      const resized = await cqFacetec.captureFromDataUrl(dataUrl, 480);
+      capFrame = resized;
+      cap.uploadImg.src = resized;
+      cap.uploadImg.style.display = '';
+      cap.uploadPlaceholder.style.display = 'none';
+      cap.uploadStatus.textContent = 'PHOTO SET · ADD A NAME';
+      cap.uploadStatus.className = 'viewfinder-status is-verified';
+      cap.uploadPreview.className = 'viewfinder is-verified';
+      cap.save.disabled = !cap.name.value.trim();
+    };
+
+    const closeCapture = () => {
+      cap.overlay.classList.remove('is-open');
+      cap.overlay.setAttribute('aria-hidden', 'true');
+      stopCameraMode();
+    };
+
+    const startAutoCheck = () => {
+      let checking = false;
+      capCheckTimer = setInterval(async () => {
+        if (checking || capFrame || capMode !== 'camera') return;
+        checking = true;
+        try {
+          const faceN = await cqFacetec.detectFaceCount(cap.video);
+          if (faceN === 0) {
+            cap.status.textContent = 'NO FACE DETECTED';
+            cap.status.className = 'viewfinder-status is-verifying';
+            cap.viewfinder.className = 'viewfinder is-verifying';
+            return;
+          }
+          if (faceN > 1) {
+            cap.status.textContent = 'MULTIPLE FACES — CAPTURE PAUSED';
+            cap.status.className = 'viewfinder-status is-denied';
+            cap.viewfinder.className = 'viewfinder is-denied';
+            return;
+          }
+          cap.status.textContent = 'VERIFYING LIVENESS…';
+          cap.status.className = 'viewfinder-status is-verifying';
+          cap.viewfinder.className = 'viewfinder is-verifying';
+          const r = await cqFacetec.gate(cap.video, null);
+          if (r.ok) {
+            capFrame = r.frame;
+            cap.status.textContent = 'FACE CAPTURED · ADD A NAME';
+            cap.status.className = 'viewfinder-status is-verified';
+            cap.viewfinder.className = 'viewfinder is-verified';
+            clearInterval(capCheckTimer); capCheckTimer = null;
+            cap.save.disabled = !cap.name.value.trim();
+          }
+        } finally { checking = false; }
+      }, 900);
+    };
+
+    cap.name.addEventListener('input', () => {
+      cap.save.disabled = !(capFrame && cap.name.value.trim());
+    });
+
+    cap.cancel.addEventListener('click', closeCapture);
+    cap.overlay.addEventListener('click', (e) => {
+      if (e.target === cap.overlay) closeCapture();
+    });
+
+    cap.modeTabs.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => setMode(b.dataset.mode));
+    });
+
+    // Upload pane — click to open file picker + drag/drop
+    cap.uploadStatus.addEventListener('click', () => cap.uploadInput.click());
+    cap.uploadPreview.addEventListener('click', () => cap.uploadInput.click());
+    cap.uploadInput.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) handleUpload(f);
+    });
+    ['dragenter','dragover'].forEach(ev => {
+      cap.uploadPreview.addEventListener(ev, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        cap.uploadPreview.className = 'viewfinder is-verifying';
+      });
+    });
+    cap.uploadPreview.addEventListener('dragleave', () => {
+      if (!capFrame) cap.uploadPreview.className = 'viewfinder';
+    });
+    cap.uploadPreview.addEventListener('drop', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) handleUpload(f);
+    });
+
+    cap.save.addEventListener('click', () => {
+      if (!capFrame || !cap.name.value.trim()) return;
+      const p = cqLine.addParticipant(line.id, {
+        name: cap.name.value,
+        photo: capFrame,
+        role: line.participants.length === 0 ? 'host' : '',
+      });
+      if (line.participants.length === 0) cqLine.setHost(line.id, p.id);
+      line = cqLine.getLine(line.id);
+      if (!cqLine.getSession() || cqLine.getSession().lineId !== line.id) {
+        cqLine.setSession({ lineId: line.id, participantId: p.id, host: true });
+      }
+      closeCapture();
+      renderPeople();
+      el.nextBtn.disabled = line.participants.length === 0;
+    });
+
+    // ---------- Toast ----------
+
+    let toastTimer = null;
+    const toast = (text, kind) => {
+      const existing = document.querySelector('.banner');
+      if (existing) existing.remove();
+      const b = document.createElement('div');
+      b.className = 'banner' + (kind === 'warn' ? ' is-warn' : kind === 'danger' ? ' is-danger' : '');
+      b.textContent = text;
+      document.body.appendChild(b);
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => b.remove(), 2600);
+    };
+
+    // ---------- Wiring ----------
+
+    const escapeHtml = (s) => s.replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    })[c]);
+
+    el.nameInput.addEventListener('input', () => {
+      el.nextBtn.disabled = !el.nameInput.value.trim();
+    });
+
+    el.nextBtn.addEventListener('click', () => {
+      if (step === 1) {
+        line = cqLine.createLine(el.nameInput.value);
+        step = 2;
+      } else if (step === 2) {
+        if (!line || !line.participants.length) return;
+        step = 3;
+      } else if (step === 3) {
+        const session = cqLine.getSession();
+        const me = session && session.lineId === line.id ? session.participantId : (line.participants[0] && line.participants[0].id);
+        location.href = cqLine.buildCallLink(line, me);
+      }
+      renderStep();
+    });
+
+    el.backBtn.addEventListener('click', () => {
+      if (step > 1) { step--; renderStep(); }
+    });
+
+    el.addBtn.addEventListener('click', openCapture);
+
+    el.copyShared.addEventListener('click', async () => {
+      await cqLine.copyToClipboard(el.sharedLink.textContent);
+      toast('Shared link copied');
+    });
+
+    // Init
+    renderStep();
+  </script>
+</body>
+</html>

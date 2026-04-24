@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Join the Secure Line — Cryptiq</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/cryptiq.css" />
+</head>
+<body>
+  <div class="page">
+
+    <header class="top-rail">
+      <a class="brand" href="index.html">
+        <span class="mark" data-icon="phoneLock"></span>
+        <span class="wordmark">
+          <span class="big">CRYPTIQ</span>
+          <span class="sml">SECURE LINE</span>
+        </span>
+      </a>
+      <div class="rail-meta">
+        <span class="dot"></span>
+        <span>ENTRY</span>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
+      </div>
+    </header>
+
+    <main class="main-centered">
+      <section class="card slim" id="gate-card">
+        <div class="card-eyebrow">
+          <span class="dot"></span>
+          <span id="gate-eyebrow">IDENTITY GATE</span>
+        </div>
+
+        <h1 id="gate-title" style="font-size:24px;">
+          Joining <span class="accent" id="gate-linename">Secure Line</span>
+        </h1>
+        <p class="lead" id="gate-lead" style="margin-bottom:20px;">
+          Look at the camera. We'll verify a live face before putting you on.
+        </p>
+
+        <div class="viewfinder" id="viewfinder">
+          <video id="video" autoplay playsinline muted></video>
+          <div class="reticle"></div>
+          <div class="scanline"></div>
+        </div>
+
+        <div class="viewfinder-status" id="status">STARTING CAMERA…</div>
+
+        <button class="btn btn-primary btn-block" id="go-btn" type="button" disabled>
+          <span data-icon="phone"></span>
+          Enter the line
+        </button>
+
+        <p class="sub" id="attendee-hint" style="margin-top:14px;"></p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      Cryptiq Secure Line · Identity verified · Voice only
+    </footer>
+  </div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/secure-line.js"></script>
+  <script src="js/facetec-bridge.js"></script>
+  <script>
+    cqIconsHydrate();
+
+    function escapeHtml(s) {
+      return (s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      })[c]);
+    }
+
+    const params = new URLSearchParams(location.search);
+    const lineId = params.get('line');
+    const sharedT = params.get('t');
+    const oneTimeT = params.get('o');
+
+    const el = {
+      title: document.getElementById('gate-title'),
+      eyebrow: document.getElementById('gate-eyebrow'),
+      lineName: document.getElementById('gate-linename'),
+      lead: document.getElementById('gate-lead'),
+      vf: document.getElementById('viewfinder'),
+      video: document.getElementById('video'),
+      status: document.getElementById('status'),
+      go: document.getElementById('go-btn'),
+      hint: document.getElementById('attendee-hint'),
+    };
+
+    const renderError = (title, detail) => {
+      el.eyebrow.textContent = 'ENTRY DENIED';
+      el.title.innerHTML = title;
+      el.lead.textContent = detail;
+      el.vf.className = 'viewfinder is-denied';
+      el.status.textContent = 'LINK INVALID';
+      el.status.className = 'viewfinder-status is-denied';
+      el.go.disabled = true;
+      el.go.innerHTML = '<span data-icon="x"></span> Link not valid';
+      cqIconsHydrate(el.go);
+    };
+
+    if (!lineId) {
+      renderError('Missing line', 'This URL doesn’t include a secure line reference.');
+      throw new Error('no line');
+    }
+
+    const line = cqLine.getLine(lineId);
+    if (!line) {
+      renderError('Line not found', 'This secure line may have expired, been deleted, or was created on another device in this demo.');
+      throw new Error('no line');
+    }
+
+    el.lineName.textContent = line.name;
+
+    // Determine target participant
+    let targetParticipant = null;
+    let tokenKind = 'shared';
+    if (oneTimeT) {
+      tokenKind = 'one-time';
+      const entry = line.oneTimeTokens[oneTimeT];
+      if (!entry) {
+        renderError('Link invalid', 'That 1-time link wasn’t recognized.');
+        throw new Error('bad token');
+      }
+      if (entry.usedAt) {
+        renderError('Link already used', 'A 1-time link is valid for a single entry. Ask the host to mint a fresh one.');
+        throw new Error('used');
+      }
+      if (Date.now() > entry.expiresAt) {
+        renderError('Link expired', 'This 1-time link has passed its 24h window. Ask the host for a new one.');
+        throw new Error('expired');
+      }
+      targetParticipant = line.participants.find(p => p.id === entry.participantId);
+      if (!targetParticipant) {
+        renderError('Attendee removed', 'The host revoked the attendee tied to this link.');
+        throw new Error('missing participant');
+      }
+      el.hint.innerHTML = `Reserved for <strong style="color:var(--accent);">${escapeHtml(targetParticipant.name)}</strong>`;
+    } else if (sharedT && sharedT === line.sharedToken) {
+      el.hint.innerHTML = `${line.participants.length} enrolled · match your face to enter`;
+    } else {
+      renderError('Link invalid', 'This link does not match the secure line.');
+      throw new Error('bad shared');
+    }
+
+    // ---------- Start camera + gate ----------
+
+    let stream = null;
+    let gatePass = null;      // { ok: true, frame, participantId }
+    let checking = false;
+    let tickTimer = null;
+
+    (async () => {
+      try {
+        stream = await cqFacetec.openCamera(el.video);
+      } catch {
+        el.status.textContent = 'CAMERA BLOCKED';
+        el.status.className = 'viewfinder-status is-denied';
+        el.vf.className = 'viewfinder is-denied';
+        return;
+      }
+      el.status.textContent = 'CENTER FACE IN RETICLE';
+      el.vf.className = 'viewfinder is-verifying';
+      el.status.classList.add('is-verifying');
+
+      tickTimer = setInterval(tick, 900);
+    })();
+
+    const tick = async () => {
+      if (checking || gatePass) return;
+      checking = true;
+      try {
+        const faceN = await cqFacetec.detectFaceCount(el.video);
+        if (faceN === 0) {
+          el.status.textContent = 'NO FACE DETECTED';
+          el.vf.className = 'viewfinder is-verifying';
+          el.status.className = 'viewfinder-status is-verifying';
+          return;
+        }
+        if (faceN > 1) {
+          el.status.textContent = 'MULTIPLE FACES — STEP AWAY';
+          el.vf.className = 'viewfinder is-denied';
+          el.status.className = 'viewfinder-status is-denied';
+          return;
+        }
+        el.status.textContent = 'RUNNING 2D LIVENESS…';
+        const refPhoto = targetParticipant ? targetParticipant.photo : null;
+        const r = await cqFacetec.gate(el.video, refPhoto);
+        if (!r.ok) {
+          if (r.reason === 'no-match') {
+            el.status.textContent = 'IDENTITY MISMATCH';
+            el.vf.className = 'viewfinder is-denied';
+            el.status.className = 'viewfinder-status is-denied';
+            return;
+          }
+          el.status.textContent = 'LIVENESS PENDING…';
+          el.vf.className = 'viewfinder is-verifying';
+          el.status.className = 'viewfinder-status is-verifying';
+          return;
+        }
+
+        // Shared-link path: pick best matching participant by 1:N scan.
+        let pid = targetParticipant && targetParticipant.id;
+        if (!pid) {
+          pid = await resolveIdentityShared(r.frame);
+          if (!pid) {
+            el.status.textContent = 'FACE NOT IN ROSTER';
+            el.vf.className = 'viewfinder is-denied';
+            el.status.className = 'viewfinder-status is-denied';
+            return;
+          }
+        }
+        gatePass = { frame: r.frame, participantId: pid };
+        clearInterval(tickTimer); tickTimer = null;
+        const pass = line.participants.find(x => x.id === pid);
+        const firstName = pass ? pass.name.split(' ')[0] : null;
+        el.status.textContent = firstName ? `WELCOME, ${pass.name.toUpperCase()}` : 'VERIFIED · READY TO JOIN';
+        el.title.innerHTML = firstName ? `Welcome, <span class="accent">${escapeHtml(firstName)}</span>` : el.title.innerHTML;
+        el.lead.textContent = 'Identity verified. Voice only — no cameras on the call.';
+        el.vf.className = 'viewfinder is-verified';
+        el.status.className = 'viewfinder-status is-verified';
+        el.go.disabled = false;
+      } finally { checking = false; }
+    };
+
+    // In sim mode, match2D always passes so we pick the first participant;
+    // in real mode this iterates each enrollment and picks the best score.
+    const resolveIdentityShared = async (frame) => {
+      if (!line.participants.length) return null;
+      if (cqFacetec.simMode) return line.participants[0].id;
+      let best = null, bestLvl = -1;
+      for (const p of line.participants) {
+        if (!p.photo) continue;
+        const ref = await cqFacetec.captureFromDataUrl(p.photo);
+        const m = await cqFacetec.match2D(frame, ref);
+        if (m.success && typeof m.matchLevel === 'number' && m.matchLevel > bestLvl) {
+          best = p.id; bestLvl = m.matchLevel;
+        }
+      }
+      return best;
+    };
+
+    el.go.addEventListener('click', () => {
+      if (!gatePass) return;
+      // Burn one-time token
+      if (oneTimeT) {
+        const r = cqLine.consumeOneTime(lineId, oneTimeT);
+        if (!r.ok) {
+          renderError('Link already used', 'A 1-time link is valid for a single entry.');
+          return;
+        }
+      }
+      cqLine.setSession({
+        lineId,
+        participantId: gatePass.participantId,
+        entry: tokenKind,
+        enteredAt: Date.now(),
+      });
+      cqFacetec.closeStream(stream);
+      location.href = cqLine.buildCallLink(line, gatePass.participantId);
+    });
+  </script>
+</body>
+</html>

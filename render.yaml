@@ -1,0 +1,21 @@
+# Cryptiq Secure Line — Render static site config
+# Drop this at the root of the repo. Render auto-detects it on connect.
+services:
+  - type: web
+    name: cryptiq-secure-line
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: .
+    headers:
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(self), microphone=(self)
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-Frame-Options
+        value: DENY

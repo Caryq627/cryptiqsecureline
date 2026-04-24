@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Secure Line · on air — Cryptiq</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/cryptiq.css" />
+</head>
+<body>
+
+  <div class="call-shell">
+
+    <header class="call-header">
+      <div class="line-id">
+        <span class="mark" data-icon="phoneLock"></span>
+        <div>
+          <div class="name" id="line-name">Secure Line</div>
+          <div class="meta">
+            <span id="line-code">—</span> · <span id="line-clock">00:00</span>
+          </div>
+        </div>
+      </div>
+      <div class="rail-meta">
+        <span class="live-indicator"><span class="dot"></span>LIVE · VOICE</span>
+        <span id="roster-count">0 verified</span>
+        <button id="demo-toggle" class="btn btn-ghost btn-sm" type="button" title="Demo controls"><span data-icon="sparkles"></span><span class="demo-label">&nbsp;DEMO</span></button>
+        <span id="mode-tag">SIM</span>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
+      </div>
+    </header>
+
+    <div id="state-banner-slot"></div>
+
+    <main class="tile-grid" id="tile-grid" aria-live="polite"></main>
+
+    <!-- Self-preview (only visible to yourself). Collapsible via the eye button. -->
+    <div class="self-preview" id="self-preview">
+      <button class="hide-btn" id="self-toggle" type="button" aria-label="Hide self-preview" title="Hide self-preview"></button>
+      <video id="self-video" autoplay playsinline muted></video>
+      <div class="label" id="self-label">VERIFYING</div>
+    </div>
+
+    <footer class="call-controls">
+      <button class="btn-icon" id="mic-btn" title="Mute / unmute (M)" aria-label="Mute">
+        <span data-icon="mic"></span>
+      </button>
+      <button class="btn-icon" id="hand-btn" title="Request to speak (H)" aria-label="Request to speak">
+        <span data-icon="bell"></span>
+      </button>
+      <button class="btn-icon" id="hold-btn" title="Hold — you stop hearing the call (O)" aria-label="Hold">
+        <span data-icon="pause"></span>
+      </button>
+      <button class="btn-icon is-danger" id="leave-btn" title="Leave" aria-label="Leave">
+        <span data-icon="logout"></span>
+      </button>
+    </footer>
+
+  </div>
+
+  <!-- Hold overlay — shown when the user self-pauses. Re-verifies to return. -->
+  <div class="hold-overlay" id="hold-overlay" aria-hidden="true">
+    <div class="hold-card">
+      <div class="card-eyebrow"><span class="dot"></span>ON HOLD</div>
+      <h2>You’re on hold</h2>
+      <p class="lead">Call audio is silenced and your mic is off. Look at the camera to re-verify and return.</p>
+
+      <div class="viewfinder" id="hold-viewfinder">
+        <video id="hold-video" autoplay playsinline muted></video>
+        <div class="reticle"></div>
+        <div class="scanline"></div>
+      </div>
+      <div class="viewfinder-status" id="hold-status">TAP TO RETURN</div>
+
+      <button class="btn btn-primary btn-block" id="hold-return-btn" type="button">
+        <span data-icon="phone"></span>
+        Return to call
+      </button>
+      <button class="btn btn-ghost btn-block" id="hold-leave-btn" type="button" style="margin-top:10px;">
+        <span data-icon="logout"></span>
+        Leave the call instead
+      </button>
+    </div>
+  </div>
+
+  <!-- Demo panel — simulate away/intruder to showcase the detection behavior. -->
+  <div id="demo-panel" style="
+    position: fixed; right: 20px; top: 78px;
+    background: var(--bg-raise);
+    border: 1px solid var(--accent-line);
+    border-radius: var(--r-soft);
+    padding: 14px;
+    box-shadow: var(--glow);
+    z-index: 25;
+    display: none;
+    font-size: 12px;
+  ">
+    <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.18em; color:var(--accent); margin-bottom:10px;">SIMULATE</div>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <button class="btn btn-ghost btn-sm" id="sim-away" type="button" style="justify-content:flex-start;">Off-camera (away)</button>
+      <button class="btn btn-ghost btn-sm" id="sim-intruder" type="button" style="justify-content:flex-start;">Imposter face</button>
+      <button class="btn btn-ghost btn-sm" id="sim-verified" type="button" style="justify-content:flex-start;">Clear → verified</button>
+    </div>
+    <div style="font-family:var(--font-mono); font-size:9px; letter-spacing:0.18em; color:var(--fg-dim); margin-top:10px;">
+      Or: cover camera → away.<br>
+      Show 2nd face in frame → imposter.
+    </div>
+  </div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/secure-line.js"></script>
+  <script src="js/facetec-bridge.js"></script>
+  <script>
+    cqIconsHydrate();
+
+    // ---------- Session / line ----------
+
+    const params = new URLSearchParams(location.search);
+    const lineId = params.get('line');
+    const meParam = params.get('me');
+
+    const line = lineId ? cqLine.getLine(lineId) : null;
+    if (!line) {
+      document.body.innerHTML = '<div style="padding:40px; text-align:center; color:var(--fg-muted);">This secure line is not available on this device.<br><br><a class="btn btn-ghost" href="index.html">← Home</a></div>';
+      throw new Error('no line');
+    }
+
+    let me = null;
+    {
+      const s = cqLine.getSession();
+      const sessionPid = (s && s.lineId === line.id) ? s.participantId : null;
+      const pickPid = meParam || sessionPid;
+      me = line.participants.find(p => p.id === pickPid) || line.participants[0];
+      if (!me) {
+        document.body.innerHTML = '<div style="padding:40px; text-align:center; color:var(--fg-muted);">No attendees enrolled on this line yet.<br><br><a class="btn btn-ghost" href="index.html">← Home</a></div>';
+        throw new Error('no me');
+      }
+      cqLine.setSession({
+        lineId: line.id,
+        participantId: me.id,
+        enteredAt: (s && s.enteredAt) || Date.now(),
+      });
+    }
+
+    // ---------- Header ----------
+
+    document.getElementById('line-name').textContent = line.name;
+    document.getElementById('line-code').textContent = line.id;
+    document.getElementById('mode-tag').textContent = cqFacetec.simMode ? 'SIM' : 'LIVE';
+    const startedAt = Date.now();
+    const clockEl = document.getElementById('line-clock');
+    setInterval(() => {
+      const s = Math.floor((Date.now() - startedAt) / 1000);
+      const mm = String(Math.floor(s/60)).padStart(2,'0');
+      const ss = String(s%60).padStart(2,'0');
+      clockEl.textContent = `${mm}:${ss}`;
+    }, 1000);
+
+    // ---------- Tile grid ----------
+
+    // Each participant gets a tile. Local liveness state runs for `me`;
+    // peers' states arrive via BroadcastChannel. Anyone who hasn't pinged
+    // recently shows as "away".
+
+    const tilesById = new Map();
+    const grid = document.getElementById('tile-grid');
+
+    const buildTile = (p) => {
+      const tile = document.createElement('div');
+      tile.className = 'tile state-away';
+      tile.dataset.pid = p.id;
+      tile.innerHTML = `
+        <div class="tile-scanline"></div>
+        <div class="hand-flag" title="Requesting to speak">${cqIcons.bell}</div>
+        <div class="speaker-flag" title="Speaking">${cqIcons.volume}</div>
+        <div class="mute-flag" title="Mic muted">${cqIcons.micOff}</div>
+        <div class="silenced-flag" title="Call audio silenced — intruder can't hear">${cqIcons.volumeOff}</div>
+        <div class="avatar"${p.photo ? ` style="background-image:url(${p.photo})"` : ''}></div>
+        <div class="name">${escapeHtml(p.name)}${p.id === me.id ? ' <span style="color:var(--accent); font-size:10px; font-family:var(--font-mono); letter-spacing:0.14em; margin-left:4px;">YOU</span>' : ''}</div>
+        <div class="role">${p.id === line.createdBy ? 'HOST' : (p.role || 'ATTENDEE')}</div>
+        <div class="status-pill"><span class="dot"></span><span class="label">AWAY</span></div>
+      `;
+      if (p.id === me.id) tile.classList.add('is-self');
+      grid.appendChild(tile);
+      tilesById.set(p.id, {
+        el: tile,
+        label: tile.querySelector('.status-pill .label'),
+        state: 'away',
+        speaking: false,
+        muted: false,
+        handRaised: false,
+        lastPing: 0,
+      });
+    };
+
+    line.participants.forEach(buildTile);
+
+    const applyVisual = (pid) => {
+      const t = tilesById.get(pid);
+      if (!t) return;
+      const el = t.el;
+      el.classList.remove('state-verified','state-speaking','state-away','state-intruder','state-hand','state-held');
+      let base;
+      if (t.state === 'intruder') base = 'state-intruder';
+      else if (t.state === 'held')   base = 'state-held';
+      else if (t.state === 'away')   base = 'state-away';
+      else if (t.handRaised) base = 'state-hand';
+      else if (t.speaking && !t.muted) base = 'state-speaking';
+      else base = 'state-verified';
+      el.classList.add(base);
+      el.classList.toggle('is-muted', t.muted);  // only actual mic mute
+      el.classList.toggle('is-speaking', !!t.speaking && t.state === 'verified' && !t.muted);
+      el.classList.toggle('hand-raised', t.handRaised);
+
+      if (t.state === 'intruder') {
+        t.label.textContent = (pid === me.id)
+          ? 'INTRUDER · CALL MUTED'
+          : 'INTRUDER · CAN\'T HEAR';
+      } else if (t.state === 'held') {
+        t.label.textContent = 'ON HOLD';
+      } else if (t.handRaised) {
+        t.label.textContent = 'WANTS TO SPEAK';
+      } else if (t.state === 'verified' && t.speaking && !t.muted) {
+        t.label.textContent = 'SPEAKING';
+      } else {
+        t.label.textContent = ({
+          verified: 'VERIFIED',
+          verifying: 'VERIFYING…',
+          away: 'AWAY',
+        })[t.state] || t.state.toUpperCase();
+      }
+    };
+
+    const setTileState = (pid, state, meta) => {
+      const t = tilesById.get(pid);
+      if (!t) return;
+      t.state = state;
+      if (meta && 'muted' in meta)      t.muted = !!meta.muted;
+      if (meta && 'speaking' in meta)   t.speaking = !!meta.speaking;
+      if (meta && 'handRaised' in meta) t.handRaised = !!meta.handRaised;
+      t.lastPing = Date.now();
+      applyVisual(pid);
+      updateRoster();
+    };
+
+    const updateRoster = () => {
+      let v = 0;
+      for (const t of tilesById.values()) {
+        if (t.state === 'verified') v++;
+      }
+      document.getElementById('roster-count').textContent =
+        `${v}/${line.participants.length} verified`;
+    };
+
+    // ---------- Self: camera, continuous liveness, VAD ----------
+
+    const selfPreview = document.getElementById('self-preview');
+    const selfVideo = document.getElementById('self-video');
+    const selfLabel = document.getElementById('self-label');
+    const selfToggle = document.getElementById('self-toggle');
+
+    // Self-preview show/hide toggle. Persists in sessionStorage.
+    const SELF_HIDDEN_KEY = 'cq.secureline.self.hidden';
+    const isSelfHidden = () => { try { return sessionStorage.getItem(SELF_HIDDEN_KEY) === '1'; } catch { return false; } };
+    const applySelfVisibility = () => {
+      const hidden = isSelfHidden();
+      selfPreview.classList.toggle('is-collapsed', hidden);
+      selfToggle.innerHTML = hidden ? cqIcons.eye : cqIcons.eyeOff;
+      selfToggle.title = hidden ? 'Show self-preview' : 'Hide self-preview';
+    };
+    selfToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = isSelfHidden();
+      try { sessionStorage.setItem(SELF_HIDDEN_KEY, cur ? '0' : '1'); } catch {}
+      applySelfVisibility();
+    });
+    applySelfVisibility();
+
+    let selfStream = null;
+    let stopLiveness = null;
+    let stopVad = null;
+
+    // Liveness callback — hoisted so enterHold/exitHold can restart the loop.
+    const livenessCallback = (state) => {
+      // While held, ignore continuous detection; exitHold() controls state.
+      if (myLocal.liveness === 'held') return;
+      myLocal.liveness = state;
+      setSelfPreviewState(state);
+      setPersistentStateBanner(state);
+      setCallAudioSilenced(state === 'intruder');
+      publishMe();
+    };
+
+    const myLocal = {
+      muted: false,
+      handRaised: false,
+      liveness: 'verifying',  // verified | verifying | away | intruder
+      speaking: false,
+    };
+
+    const setSelfPreviewState = (state) => {
+      selfPreview.classList.remove('state-verified','state-away','state-intruder','state-verifying','state-held');
+      selfPreview.classList.add('state-' + state);
+      selfLabel.textContent = ({
+        verified: 'VERIFIED',
+        verifying: 'VERIFYING',
+        away: 'AWAY',
+        intruder: 'INTRUDER',
+        held: 'ON HOLD',
+      })[state] || state.toUpperCase();
+    };
+
+    const startSelfCamera = async () => {
+      try {
+        selfStream = await cqFacetec.openCamera(selfVideo, { audio: true });
+      } catch {
+        // Camera denied — participant will show as permanently away.
+        myLocal.liveness = 'away';
+        setSelfPreviewState('away');
+        banner('Camera/mic blocked — others can\'t verify you', 'warn');
+        publishMe();
+        return;
+      }
+
+      // Mute our own audio playback of the self video (already muted) and
+      // set initial mute state on the mic track.
+      applyMicMute();
+
+      stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
+        refPhoto: me.photo,
+        tickMs: 1800,
+        cb: livenessCallback,
+      });
+
+      stopVad = cqFacetec.startVoiceActivity(selfStream, (speaking) => {
+        myLocal.speaking = speaking && !myLocal.muted && myLocal.liveness === 'verified';
+        publishMe();
+      });
+    };
+
+    // When an unauthorized face is detected in front of the user's camera,
+    // we DON'T mute the verified user — they're still free to speak. We
+    // silence CALL AUDIO PLAYBACK locally so the intruder can't eavesdrop.
+    // Other participants are informed via the "INTRUDER · CAN'T HEAR" label.
+    let callAudioSilenced = false;
+    const setCallAudioSilenced = (silenced) => {
+      callAudioSilenced = !!silenced;
+      // Mute every audio/video element on the page so incoming call audio
+      // can't be heard in the room with the intruder. (In a real product
+      // this would gate the WebRTC remote audio tracks.)
+      document.querySelectorAll('audio, video').forEach(el => {
+        if (el === selfVideo) return; // self-video is already muted
+        el.muted = callAudioSilenced;
+      });
+    };
+
+    const applyMicMute = () => {
+      if (!selfStream) return;
+      selfStream.getAudioTracks().forEach(t => { t.enabled = !myLocal.muted; });
+    };
+
+    // ---------- Controls ----------
+
+    const micBtn  = document.getElementById('mic-btn');
+    const handBtn = document.getElementById('hand-btn');
+    const leaveBtn = document.getElementById('leave-btn');
+
+    const setMic = (muted) => {
+      myLocal.muted = muted;
+      applyMicMute();
+      micBtn.classList.toggle('is-warn', muted);
+      micBtn.classList.toggle('is-active', !muted);
+      micBtn.firstElementChild.innerHTML = muted ? cqIcons.micOff : cqIcons.mic;
+      publishMe();
+    };
+
+    const setHand = (raised) => {
+      myLocal.handRaised = raised;
+      handBtn.classList.toggle('is-active', raised);
+      publishMe();
+    };
+
+    micBtn.addEventListener('click', () => {
+      setMic(!myLocal.muted);
+    });
+    handBtn.addEventListener('click', () => setHand(!myLocal.handRaised));
+    leaveBtn.addEventListener('click', () => leaveCall());
+
+    document.addEventListener('keydown', (e) => {
+      if (e.target.matches('input, textarea')) return;
+      if (e.key === 'm' || e.key === 'M') { micBtn.click(); }
+      else if (e.key === 'h' || e.key === 'H') { handBtn.click(); }
+    });
+
+    // ---------- BroadcastChannel presence ----------
+
+    const publishMe = () => {
+      cqLine.emitPresence({
+        type: 'state',
+        lineId: line.id,
+        pid: me.id,
+        state: myLocal.liveness,
+        muted: myLocal.muted,
+        handRaised: myLocal.handRaised,
+        speaking: myLocal.speaking,
+        ts: Date.now(),
+      });
+      // Also apply to our own tile immediately.
+      setTileState(me.id, myLocal.liveness, {
+        muted: myLocal.muted,
+        handRaised: myLocal.handRaised,
+        speaking: myLocal.speaking,
+      });
+    };
+
+    const publishJoin = () => cqLine.emitPresence({
+      type: 'join', lineId: line.id, pid: me.id, ts: Date.now(),
+    });
+
+    const publishLeave = () => cqLine.emitPresence({
+      type: 'leave', lineId: line.id, pid: me.id, ts: Date.now(),
+    });
+
+    cqLine.onPresence((msg) => {
+      if (!msg || msg.lineId !== line.id) return;
+      if (msg.pid === me.id) return;
+
+      if (msg.type === 'join') {
+        // Ask peer to resend their current state so we light their tile.
+        cqLine.emitPresence({ type: 'whois', lineId: line.id, pid: me.id });
+        return;
+      }
+      if (msg.type === 'leave') {
+        setTileState(msg.pid, 'away', { muted: false, handRaised: false, speaking: false });
+        return;
+      }
+      if (msg.type === 'whois') {
+        publishMe();
+        return;
+      }
+      if (msg.type === 'state') {
+        const prev = tilesById.get(msg.pid)?.state;
+        setTileState(msg.pid, msg.state, {
+          muted: !!msg.muted,
+          handRaised: !!msg.handRaised,
+          speaking: !!msg.speaking,
+        });
+        if (msg.state === 'intruder' && prev !== 'intruder') {
+          const p = line.participants.find(x => x.id === msg.pid);
+          if (p) banner(`${p.name.split(' ')[0]} has an intruder — they can't hear the call`, 'danger');
+        }
+      }
+    });
+
+    // Periodic heartbeat + away-sweeper
+    setInterval(() => {
+      publishMe();
+      const cutoff = Date.now() - 6000;
+      tilesById.forEach((t, pid) => {
+        if (pid === me.id) return;
+        if (t.lastPing && t.lastPing < cutoff && t.state !== 'away') {
+          t.state = 'away';
+          applyVisual(pid);
+          updateRoster();
+        }
+      });
+    }, 2500);
+
+    // ---------- Banner ----------
+
+    let bannerTimer = null;
+    const banner = (text, kind) => {
+      const existing = document.querySelector('.banner:not(.is-sticky)');
+      if (existing) existing.remove();
+      const b = document.createElement('div');
+      b.className = 'banner' + (kind === 'warn' ? ' is-warn' : kind === 'danger' ? ' is-danger' : '');
+      b.innerHTML = `<span class="dot"></span>${text}`;
+      document.body.appendChild(b);
+      clearTimeout(bannerTimer);
+      bannerTimer = setTimeout(() => b.remove(), 3200);
+    };
+
+    // Sticky banner that persists for the entire duration the user is
+    // away or flagged as an intruder — clears on return to verified.
+    const bannerSlot = document.getElementById('state-banner-slot');
+    const setPersistentStateBanner = (state) => {
+      if (state === 'away' || state === 'intruder' || state === 'held') {
+        const config = {
+          away:     { text: 'Off camera · you appear AWAY',       kind: 'is-warn' },
+          intruder: { text: 'Intruder · call audio silenced',     kind: 'is-danger' },
+          held:     { text: 'On hold · tap return to re-verify',  kind: 'is-warn' },
+        }[state];
+        bannerSlot.innerHTML = `<div class="state-banner ${config.kind}"><span class="dot"></span>${config.text}</div>`;
+      } else {
+        bannerSlot.innerHTML = '';
+      }
+    };
+
+    // ---------- Lifecycle ----------
+
+    const leaveCall = () => {
+      publishLeave();
+      if (stopLiveness) stopLiveness();
+      if (stopVad) stopVad();
+      cqFacetec.closeStream(selfStream);
+      cqLine.clearSession();
+      location.href = 'index.html';
+    };
+
+    window.addEventListener('beforeunload', () => {
+      publishLeave();
+      cqFacetec.closeStream(selfStream);
+    });
+
+    // ---------- Utils ----------
+
+    function escapeHtml(s) {
+      return (s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      })[c]);
+    }
+
+    // ---------- Hold (self-pause + re-verify to return) ----------
+
+    const holdOverlay = document.getElementById('hold-overlay');
+    const holdVideo = document.getElementById('hold-video');
+    const holdViewfinder = document.getElementById('hold-viewfinder');
+    const holdStatus = document.getElementById('hold-status');
+    const holdReturnBtn = document.getElementById('hold-return-btn');
+    const holdLeaveBtn = document.getElementById('hold-leave-btn');
+    const holdBtn = document.getElementById('hold-btn');
+
+    let preHoldMuted = false;
+    let holdReverifyTimer = null;
+
+    const enterHold = () => {
+      if (myLocal.liveness === 'held') return;
+      // Pause the continuous liveness loop while held — the user is self-paused.
+      if (stopLiveness) { stopLiveness(); stopLiveness = null; }
+      if (stopVad)       { stopVad(); stopVad = null; }
+
+      preHoldMuted = myLocal.muted;
+      setMic(true);                 // outgoing audio off (they can't be heard)
+      setCallAudioSilenced(true);   // incoming audio off (they can't hear)
+
+      myLocal.liveness = 'held';
+      setSelfPreviewState('held');
+      setPersistentStateBanner('held');
+      publishMe();
+
+      holdBtn.classList.add('is-active');
+
+      // Reuse the same stream for the overlay viewfinder (don't re-open camera).
+      if (selfStream) {
+        holdVideo.srcObject = selfStream;
+        holdVideo.play().catch(() => {});
+      }
+      holdViewfinder.className = 'viewfinder';
+      holdStatus.textContent = 'TAP TO RETURN';
+      holdStatus.className = 'viewfinder-status';
+      holdReturnBtn.disabled = false;
+      holdOverlay.classList.add('is-open');
+      holdOverlay.setAttribute('aria-hidden', 'false');
+    };
+
+    const exitHold = () => {
+      if (myLocal.liveness !== 'held') return;
+
+      if (holdReverifyTimer) { clearInterval(holdReverifyTimer); holdReverifyTimer = null; }
+      holdOverlay.classList.remove('is-open');
+      holdOverlay.setAttribute('aria-hidden', 'true');
+      holdBtn.classList.remove('is-active');
+
+      setMic(preHoldMuted);
+      setCallAudioSilenced(false);
+
+      myLocal.liveness = 'verifying';
+      setSelfPreviewState('verifying');
+      setPersistentStateBanner('verifying');
+
+      // Restart continuous liveness loop.
+      if (selfStream && selfVideo) {
+        stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
+          refPhoto: me.photo,
+          tickMs: 1800,
+          cb: livenessCallback,
+        });
+        stopVad = cqFacetec.startVoiceActivity(selfStream, (speaking) => {
+          myLocal.speaking = speaking && !myLocal.muted && myLocal.liveness === 'verified';
+          publishMe();
+        });
+      }
+      publishMe();
+    };
+
+    const runReturnCheck = () => {
+      let checking = false;
+      holdStatus.textContent = 'VERIFYING…';
+      holdStatus.className = 'viewfinder-status is-verifying';
+      holdViewfinder.className = 'viewfinder is-verifying';
+      holdReturnBtn.disabled = true;
+
+      const tick = async () => {
+        if (checking) return;
+        checking = true;
+        try {
+          const r = await cqFacetec.gate(holdVideo, me.photo);
+          if (r.ok) {
+            clearInterval(holdReverifyTimer); holdReverifyTimer = null;
+            holdStatus.textContent = 'VERIFIED · WELCOME BACK';
+            holdStatus.className = 'viewfinder-status is-verified';
+            holdViewfinder.className = 'viewfinder is-verified';
+            setTimeout(exitHold, 420);
+          }
+        } finally { checking = false; }
+      };
+      tick();
+      holdReverifyTimer = setInterval(tick, 900);
+    };
+
+    holdBtn.addEventListener('click', enterHold);
+    holdReturnBtn.addEventListener('click', runReturnCheck);
+    holdLeaveBtn.addEventListener('click', () => {
+      if (holdReverifyTimer) { clearInterval(holdReverifyTimer); holdReverifyTimer = null; }
+      holdOverlay.classList.remove('is-open');
+      leaveCall();
+    });
+
+    // Keyboard shortcut: O for hold
+    document.addEventListener('keydown', (e) => {
+      if (e.target.matches('input, textarea')) return;
+      if (e.key === 'o' || e.key === 'O') {
+        if (myLocal.liveness === 'held') runReturnCheck();
+        else enterHold();
+      }
+    });
+
+    // ---------- Demo panel ----------
+
+    const demoBtn = document.getElementById('demo-toggle');
+    const demoPanel = document.getElementById('demo-panel');
+    demoBtn.addEventListener('click', () => {
+      demoPanel.style.display = demoPanel.style.display === 'block' ? 'none' : 'block';
+    });
+    document.getElementById('sim-away').addEventListener('click', () => {
+      if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('away', 6000);
+    });
+    document.getElementById('sim-intruder').addEventListener('click', () => {
+      if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('intruder', 6000);
+    });
+    document.getElementById('sim-verified').addEventListener('click', () => {
+      if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('verified', 2000);
+    });
+
+    // ---------- Go ----------
+
+    setMic(false);  // initial mic state (depends on publishMe being defined)
+    publishJoin();
+    startSelfCamera();
+    updateRoster();
+  </script>
+</body>
+</html>

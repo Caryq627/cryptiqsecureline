@@ -1,0 +1,349 @@
+// Cryptiq Secure Line — FaceTec bridge
+// Wraps FaceTec 2D liveness + 1:N match for this demo.
+// In sim mode (no server configured), leans on the native FaceDetector API
+// so intruder/away detection still works against a real camera feed.
+
+(function (root) {
+  // Default to simulation mode unless a FaceTec server is configured.
+  // To wire real FaceTec, set window.CQ_FACETEC = { server, deviceKey }
+  // before loading this script, or call cqFacetec.configure(...).
+  const config = {
+    server:       null,
+    deviceKey:    null,
+    liveness2DPath: '/liveness-2d',
+    match2DPath:    '/match-2d-2d',
+    minMatchLevel: 3,
+    tickMs:        1800,
+    simMode:       true,
+  };
+
+  // Honor environment config
+  if (root.CQ_FACETEC && root.CQ_FACETEC.server && root.CQ_FACETEC.deviceKey) {
+    config.server    = root.CQ_FACETEC.server;
+    config.deviceKey = root.CQ_FACETEC.deviceKey;
+    config.simMode   = false;
+  }
+
+  const configure = (opts) => {
+    Object.assign(config, opts || {});
+    config.simMode = !(config.server && config.deviceKey);
+  };
+
+  // ---------- frame capture ----------
+
+  const captureFrame = (video, maxSize = 480) => {
+    if (!video || !video.videoWidth) return null;
+    const w = video.videoWidth, h = video.videoHeight;
+    const scale = Math.min(1, maxSize / Math.max(w, h));
+    const cw = Math.round(w * scale), ch = Math.round(h * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    // un-mirror: browsers apply CSS mirror but raw video pixels aren't flipped,
+    // match preview to what the user sees
+    ctx.translate(cw, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, cw, ch);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  };
+
+  const captureFromDataUrl = async (dataUrl, maxSize = 480) => {
+    if (!dataUrl) return null;
+    const img = new Image();
+    img.src = dataUrl;
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+    const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+    const cw = Math.round(img.width * scale), ch = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  };
+
+  // ---------- native FaceDetector wrapper ----------
+  // Chrome/Edge ship FaceDetector; Safari/Firefox don't. Return null when missing.
+
+  let _faceDetector = null;
+  let _faceDetectorChecked = false;
+  const getFaceDetector = () => {
+    if (_faceDetectorChecked) return _faceDetector;
+    _faceDetectorChecked = true;
+    try {
+      if ('FaceDetector' in window) {
+        _faceDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 4 });
+      }
+    } catch {
+      _faceDetector = null;
+    }
+    return _faceDetector;
+  };
+
+  const detectFaceCount = async (video) => {
+    const fd = getFaceDetector();
+    if (!fd || !video || !video.videoWidth) return null;
+    try {
+      const faces = await fd.detect(video);
+      return faces.length;
+    } catch {
+      return null;
+    }
+  };
+
+  const faceDetectorSupported = () => !!getFaceDetector();
+
+  // ---------- 2D liveness (real + sim) ----------
+
+  const _fetchWithTimeout = async (url, opts, ms) => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try {
+      const r = await fetch(url, { ...opts, signal: ctl.signal });
+      return r;
+    } finally { clearTimeout(t); }
+  };
+
+  const liveness2D = async (frameDataUrl) => {
+    if (config.simMode) {
+      // Simulated verdict — biased strongly real for demo usability.
+      await new Promise(r => setTimeout(r, 420));
+      return { success: true, isLikelyRealPerson: Math.random() > 0.04 };
+    }
+    try {
+      const res = await _fetchWithTimeout(config.server + config.liveness2DPath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-Key': config.deviceKey },
+        body: JSON.stringify({ image: frameDataUrl, customID: 'cq-secureline' }),
+      }, 18_000);
+      return await res.json();
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  };
+
+  const match2D = async (frameDataUrl, refDataUrl) => {
+    if (config.simMode) {
+      await new Promise(r => setTimeout(r, 480));
+      // In sim mode we can't actually verify identity, so this is a demo pass.
+      return { success: true, matchLevel: 5 };
+    }
+    try {
+      const res = await _fetchWithTimeout(config.server + config.match2DPath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-Key': config.deviceKey },
+        body: JSON.stringify({
+          image0: frameDataUrl, image1: refDataUrl,
+          minMatchLevel: config.minMatchLevel,
+        }),
+      }, 18_000);
+      return await res.json();
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  };
+
+  // One-shot gate: liveness + optional face match. Used by enroll + join.
+  const gate = async (video, refPhoto) => {
+    const frame = captureFrame(video, 480);
+    if (!frame) return { ok: false, reason: 'no-frame' };
+    const faceN = await detectFaceCount(video);
+    if (faceN !== null && faceN === 0) {
+      return { ok: false, reason: 'no-face', frame };
+    }
+    if (faceN !== null && faceN > 1) {
+      return { ok: false, reason: 'multiple-faces', frame, faces: faceN };
+    }
+    const live = await liveness2D(frame);
+    if (!live.success || (live.isLikelyRealPerson === false)) {
+      return { ok: false, reason: 'liveness-failed', frame };
+    }
+    if (refPhoto) {
+      const ref = await captureFromDataUrl(refPhoto);
+      const m = await match2D(frame, ref);
+      if (!m.success || (typeof m.matchLevel === 'number' && m.matchLevel < config.minMatchLevel)) {
+        return { ok: false, reason: 'no-match', frame };
+      }
+    }
+    return { ok: true, frame };
+  };
+
+  // ---------- continuous background liveness ----------
+  //
+  // Runs every ~tickMs against a live <video>. Emits state transitions:
+  //   'verified'  — 1 face present + liveness ok
+  //   'away'      — 0 faces present for ~3 ticks
+  //   'intruder'  — ≥2 faces OR unknown face where ref is provided
+  //   'verifying' — transient / initial
+  //
+  // cb(state, meta) is called on every tick (not just transitions) so UI can animate.
+
+  const startContinuousLiveness = (video, opts = {}) => {
+    const {
+      refPhoto = null,
+      tickMs = config.tickMs,
+      cb = () => {},
+    } = opts;
+
+    let alive = true;
+    let awayStreak = 0;
+    let lastState = 'verifying';
+    let forced = null; // { state, until } — demo override
+
+    const emit = (state, meta) => {
+      cb(state, meta || {});
+      lastState = state;
+    };
+
+    const tick = async () => {
+      if (!alive) return;
+
+      // Demo force-state overrides real detection for a short window.
+      if (forced && Date.now() < forced.until) {
+        emit(forced.state, { forced: true });
+        return;
+      } else if (forced) {
+        forced = null;
+      }
+
+      if (!video || !video.videoWidth || video.paused) {
+        emit('away', { reason: 'video-inactive' });
+        return;
+      }
+
+      // Primary away/intruder signal: the browser's native FaceDetector —
+      // a proper ML face detector (not a skin-tone or brightness heuristic).
+      const faceN = await detectFaceCount(video);
+
+      if (faceN === 0) {
+        awayStreak++;
+        emit(awayStreak >= 1 ? 'away' : 'verifying', { faces: 0, awayStreak });
+        return;
+      }
+      if (faceN !== null && faceN > 1) {
+        awayStreak = 0;
+        emit('intruder', { faces: faceN });
+        return;
+      }
+      awayStreak = 0;
+
+      // We either got exactly 1 face, OR FaceDetector is unavailable.
+      // Either way, let FaceTec 2D liveness be the authoritative signal —
+      // a failed liveness becomes "verifying" until restored; identity
+      // mismatch (periodic 1:1 match) becomes "intruder".
+      const frame = captureFrame(video, 320);
+      const live = await liveness2D(frame);
+      if (!live || !live.success || live.isLikelyRealPerson === false) {
+        emit('verifying', { liveness: false, faces: faceN });
+        return;
+      }
+      if (refPhoto && Math.random() < 0.18) {
+        const ref = await captureFromDataUrl(refPhoto);
+        const m = await match2D(frame, ref);
+        if (!m.success || (typeof m.matchLevel === 'number' && m.matchLevel < config.minMatchLevel)) {
+          emit('intruder', { reason: 'identity-mismatch', faces: faceN });
+          return;
+        }
+      }
+      emit('verified', { faces: faceN });
+    };
+
+    tick();
+    const handle = setInterval(tick, tickMs);
+
+    const stop = () => {
+      alive = false;
+      clearInterval(handle);
+    };
+
+    // Expose a demo hook so the call page can simulate intruder/away.
+    stop.forceState = (state, durationMs = 4000) => {
+      forced = { state, until: Date.now() + durationMs };
+      tick();
+    };
+
+    return stop;
+  };
+
+  // ---------- voice activity detection ----------
+  //
+  // Lightweight RMS-over-threshold VAD. Powers the "speaking" glow ring.
+  // Returns a stop() function.
+
+  const startVoiceActivity = (stream, cb, opts = {}) => {
+    const {
+      threshold = 0.035,
+      hold = 220,
+    } = opts;
+    if (!stream || !stream.getAudioTracks || !stream.getAudioTracks().length) {
+      return () => {};
+    }
+    let ac;
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+    } catch {
+      return () => {};
+    }
+    const src = ac.createMediaStreamSource(stream);
+    const analyser = ac.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    const buf = new Uint8Array(analyser.fftSize);
+
+    let alive = true, speaking = false, lastAbove = 0;
+
+    const loop = () => {
+      if (!alive) return;
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = (buf[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / buf.length);
+      const now = performance.now();
+      if (rms > threshold) {
+        lastAbove = now;
+        if (!speaking) { speaking = true; cb(true, rms); }
+      } else if (speaking && (now - lastAbove) > hold) {
+        speaking = false; cb(false, rms);
+      }
+      requestAnimationFrame(loop);
+    };
+    loop();
+
+    return () => {
+      alive = false;
+      try { src.disconnect(); } catch {}
+      try { ac.close(); } catch {}
+    };
+  };
+
+  // ---------- camera access ----------
+
+  const openCamera = async (video, opts = {}) => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
+      audio: opts.audio === true,
+    });
+    video.srcObject = stream;
+    video.setAttribute('playsinline', 'true');
+    video.muted = true;
+    await video.play();
+    return stream;
+  };
+
+  const closeStream = (stream) => {
+    if (!stream) return;
+    try { stream.getTracks().forEach(t => t.stop()); } catch {}
+  };
+
+  // ---------- public api ----------
+
+  root.cqFacetec = {
+    configure,
+    get simMode() { return config.simMode; },
+    captureFrame, captureFromDataUrl,
+    detectFaceCount, faceDetectorSupported, liveness2D, match2D,
+    gate, startContinuousLiveness, startVoiceActivity,
+    openCamera, closeStream,
+  };
+})(window);

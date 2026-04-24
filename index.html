@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Cryptiq Secure Line — voice-only, identity-verified conferencing</title>
+  <meta name="description" content="Voice-only conference calls with continuous biometric liveness. No cameras. No voice cloning. Just verified voices." />
+  <meta name="theme-color" content="#0b0e12" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/cryptiq.css" />
+</head>
+<body>
+  <div class="page">
+
+    <header class="top-rail">
+      <a class="brand" href="index.html">
+        <span class="mark" data-icon="phoneLock"></span>
+        <span class="wordmark">
+          <span class="big">CRYPTIQ</span>
+          <span class="sml">SECURE LINE</span>
+        </span>
+      </a>
+      <div class="rail-meta">
+        <span class="dot"></span>
+        <span>v0.1</span>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
+      </div>
+    </header>
+
+    <main class="main-centered">
+      <section class="card" role="main">
+        <div class="card-eyebrow">
+          <span class="dot"></span>
+          VOICE-ONLY · LIVENESS-VERIFIED
+        </div>
+
+        <h1>Start a <span class="accent">Secure Line</span>.</h1>
+        <p class="lead">
+          A one-tap conference call where every voice is continuously face-verified — but no cameras are ever shown.
+          Replace Zoom and Teams for sensitive conversations without ever being on camera.
+        </p>
+
+        <div class="chip-row" aria-label="Features">
+          <div class="chip"><span data-icon="mic"></span>Voice-only</div>
+          <div class="chip"><span data-icon="shieldCheck"></span>Live face-match</div>
+          <div class="chip"><span data-icon="link"></span>One-tap links</div>
+          <div class="chip"><span data-icon="eyeOff"></span>Anti voice-clone</div>
+        </div>
+
+        <a href="setup.html" class="btn btn-primary btn-block btn-lg">
+          <span data-icon="phone"></span>
+          Start a secure line
+          <span data-icon="arrowRight"></span>
+        </a>
+
+        <p class="sub">
+          Have a link? <a href="#" id="paste-link">Paste &amp; join →</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      No cameras on the call · Every voice continuously verified · Built on Cryptiq
+    </footer>
+  </div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    cqIconsHydrate();
+    document.getElementById('paste-link').addEventListener('click', async (e) => {
+      e.preventDefault();
+      let text = '';
+      try { text = await navigator.clipboard.readText(); } catch {}
+      if (!text) text = prompt('Paste your secure line link') || '';
+      text = text.trim();
+      if (!text) return;
+      try {
+        const u = new URL(text, location.href);
+        if (u.pathname.endsWith('join.html') || u.searchParams.get('line')) {
+          location.href = u.toString();
+          return;
+        }
+      } catch {}
+      alert('That doesn’t look like a secure line link.');
+    });
+  </script>
+</body>
+</html>
