@@ -625,24 +625,34 @@ button { font-family: inherit; }
    ============================================================ */
 
 .link-box {
-  border: 1px solid var(--accent-line);
-  background: rgba(46,196,182,0.05);
+  border: 1px solid var(--surface-border);
+  background: rgba(255,255,255,0.02);
   border-radius: var(--r-soft);
-  padding: 14px 16px;
+  padding: 12px 14px;
   margin-bottom: 18px;
-  position: relative;
+  /* Grid keeps label + copy on the top row and the URL on its own row,
+     so the copy button never overlaps the URL — even on narrow phones. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label  copy"
+    "url    url";
+  gap: 6px 10px;
+  align-items: center;
 }
 
 .link-box .label {
+  grid-area: label;
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: 8px;
+  color: var(--fg-muted);
+  min-width: 0;
 }
 
 .link-box .url {
+  grid-area: url;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
@@ -652,14 +662,21 @@ button { font-family: inherit; }
   text-overflow: ellipsis;
   letter-spacing: 0;
   line-height: 1.4;
-  padding-right: 82px;  /* reserve space for copy button */
+  min-width: 0;
 }
 
 .link-box.compact .url { font-size: 10.5px; }
 
 .link-box .copy {
-  position: absolute;
-  top: 12px; right: 12px;
+  grid-area: copy;
+  align-self: center;
+  /* No more absolute positioning — the grid places this naturally. */
+}
+
+@media (max-width: 640px) {
+  .link-box { padding: 10px 12px; gap: 4px 8px; }
+  .link-box .label { font-size: 9px; letter-spacing: 0.18em; }
+  .link-box .url   { font-size: 10.5px; }
 }
 
 .link-box.compact .url { font-size: 11px; }
