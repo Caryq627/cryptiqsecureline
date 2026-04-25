@@ -342,28 +342,29 @@
   // One-shot gate: liveness + optional face match. Tries captures at many
   // distances so a user 6-8+ feet from the camera still passes:
   //   1. face-centered crop from FaceDetector's bbox (best for far users)
-  //   2. full rectangular frame (no edge loss)
+  //   2. full rectangular frame (no edge loss — FaceTec scans the whole view)
   //   3. far / mid / near center crops (legacy fallback)
-  // First successful attempt wins.
+  // First successful attempt wins. We do NOT short-circuit on FaceDetector
+  // 0-faces — it sometimes misses small/distant faces but FaceTec's own
+  // face-finder picks them up on the full frame.
   const gate = async (video, refPhoto) => {
     const faceN = await detectFaceCount(video);
-    if (faceN !== null && faceN === 0) {
-      return { ok: false, reason: 'no-face' };
-    }
+    // Multi-face is the only condition that hard-rejects up front. Single
+    // 0-face from the browser detector falls through to FaceTec.
     if (faceN !== null && faceN > 1) {
       return { ok: false, reason: 'multiple-faces', faces: faceN };
     }
 
     const ref = refPhoto ? await captureFromDataUrl(refPhoto) : null;
     const attempts = [
-      { name: 'face', frame: await captureAroundFace(video, 480) },
-      { name: 'full', frame: captureFullFrame(video, 640) },
-      { name: 'far',  frame: captureFrameAtZoom(video, 'far',  480) },
+      { name: 'face', frame: await captureAroundFace(video, 640) },
+      { name: 'full', frame: captureFullFrame(video, 720) },
+      { name: 'far',  frame: captureFrameAtZoom(video, 'far',  560) },
       { name: 'mid',  frame: captureFrameAtZoom(video, 'mid',  480) },
-      { name: 'near', frame: captureFrameAtZoom(video, 'near', 480) },
+      { name: 'near', frame: captureFrameAtZoom(video, 'near', 420) },
     ];
 
-    let lastReason = 'liveness-failed';
+    let lastReason = (faceN === 0) ? 'no-face' : 'liveness-failed';
     let lastFrame  = null;
 
     for (const { name, frame } of attempts) {

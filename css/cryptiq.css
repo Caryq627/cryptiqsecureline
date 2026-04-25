@@ -1328,6 +1328,28 @@ button { font-family: inherit; }
   animation: cq-pulse 1.2s infinite;
 }
 
+/* Mode badge in the call header — shows monitoring mode at a glance */
+.mode-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.mode-badge.is-active {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 8px rgba(46,196,182,0.25);
+}
+@media (max-width: 640px) {
+  .mode-badge { font-size: 8.5px; padding: 2px 6px; letter-spacing: 0.14em; }
+}
+
 /* Admission request — shown to the host when a guest submits via open link */
 .admit-strip {
   display: flex;

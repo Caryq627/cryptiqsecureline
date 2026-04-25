@@ -95,6 +95,23 @@
           <input id="line-name" type="text" maxlength="60" placeholder="Board call — Q2 planning" autocomplete="off" />
         </div>
 
+        <!-- Security mode toggle: default is entry-gated, opt-in for
+             continuous monitoring on sensitive calls. -->
+        <div id="mode-toggle-row" style="margin: -6px 0 18px; padding: 12px 14px; border: 1px solid var(--surface-border); border-radius: var(--r-soft); background: rgba(255,255,255,0.02);">
+          <label class="toggle" style="width:100%; justify-content: space-between;">
+            <span>
+              <span style="font-size:13px; font-weight:500; color: var(--fg);">Active liveness monitoring</span>
+              <span style="display:block; font-size:11px; color: var(--fg-muted); margin-top:2px;">
+                Continuously face-match every attendee during the call. Off = verify once at entry, then normal call.
+              </span>
+            </span>
+            <span style="display:inline-flex; align-items:center;">
+              <input id="active-monitoring" type="checkbox">
+              <span class="track"></span>
+            </span>
+          </label>
+        </div>
+
         <!-- participants list -->
         <div id="people-section" style="margin-top:6px;">
           <label style="display:block; font-size:11px; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.15em; color:var(--fg-muted); margin-bottom:10px;">Attendees</label>
@@ -263,6 +280,7 @@
         el.title.innerHTML = 'Name your <span class="accent">Secure Line</span>.';
         el.sub.textContent = 'Give it something short your attendees will recognize.';
         el.nameInput.parentElement.classList.remove('hidden');
+        document.getElementById('mode-toggle-row').classList.remove('hidden');
         el.peopleSection.classList.add('hidden');
         el.linksSection.classList.add('hidden');
         el.nextBtn.innerHTML = '<span data-icon="arrowRight"></span> Next';
@@ -272,6 +290,7 @@
         el.title.innerHTML = 'Enroll your <span class="accent">attendees</span>.';
         el.sub.textContent = 'Each face becomes their key to this line. Add yourself first — you\'re the host.';
         el.nameInput.parentElement.classList.add('hidden');
+        document.getElementById('mode-toggle-row').classList.add('hidden');
         el.peopleSection.classList.remove('hidden');
         el.linksSection.classList.add('hidden');
         el.nextBtn.innerHTML = 'Generate links <span data-icon="arrowRight"></span>';
@@ -282,6 +301,7 @@
         el.title.innerHTML = 'Share your <span class="accent">Secure Line</span>.';
         el.sub.textContent = 'Paste the shared link anywhere, or send each attendee their own one-time link.';
         el.nameInput.parentElement.classList.add('hidden');
+        document.getElementById('mode-toggle-row').classList.add('hidden');
         el.peopleSection.classList.remove('hidden');
         el.linksSection.classList.remove('hidden');
         el.addBtn.classList.add('hidden');
@@ -709,7 +729,8 @@
 
     el.nextBtn.addEventListener('click', () => {
       if (step === 1) {
-        line = cqLine.createLine(el.nameInput.value);
+        const activeMonitoring = !!document.getElementById('active-monitoring').checked;
+        line = cqLine.createLine(el.nameInput.value, { activeMonitoring });
         step = 2;
       } else if (step === 2) {
         if (!line || !line.participants.length) return;

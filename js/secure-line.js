@@ -47,7 +47,8 @@
 
   // ---------- line factory ----------
 
-  const createLine = (name) => {
+  const createLine = (name, opts) => {
+    opts = opts || {};
     const id = lineCode();
     const line = {
       id,
@@ -57,7 +58,20 @@
       participants: [],         // [{ id, name, photo (dataURL), role, enrolledAt }]
       sharedToken: randToken(16),
       oneTimeTokens: {},        // { [tokenId]: { participantId, createdAt, expiresAt, usedAt } }
+      // When true, every participant is face-matched continuously for the
+      // whole call (flip to away / intruder on the fly, auto-silence audio
+      // if an imposter is detected, etc). Default is entry-gated only:
+      // verify once at the door, then it's a normal call.
+      activeMonitoring: !!opts.activeMonitoring,
     };
+    saveLine(line);
+    return line;
+  };
+
+  const setActiveMonitoring = (lineId, on) => {
+    const line = getLine(lineId);
+    if (!line) return;
+    line.activeMonitoring = !!on;
     saveLine(line);
     return line;
   };
@@ -374,7 +388,7 @@
   // ---------- public api ----------
 
   root.cqLine = {
-    getLine, saveLine, deleteLine, createLine,
+    getLine, saveLine, deleteLine, createLine, setActiveMonitoring,
     addParticipant, removeParticipant, setHost,
     mintOneTime, consumeOneTime, revokeOneTime, findParticipantByToken,
     mintOpenLink, revokeOpenLink, buildGuestLink,

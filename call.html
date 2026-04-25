@@ -51,6 +51,7 @@
       <div class="rail-meta">
         <span class="live-indicator"><span class="dot"></span>LIVE · VOICE</span>
         <span id="roster-count">0 verified</span>
+        <span id="mode-badge" class="mode-badge" title="Monitoring mode">ENTRY-GATED</span>
         <button id="demo-toggle" class="btn btn-ghost btn-sm" type="button" title="Demo controls" style="display:none;"><span data-icon="sparkles"></span><span class="demo-label">&nbsp;DEMO</span></button>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
       </div>
@@ -182,6 +183,16 @@
 
     document.getElementById('line-name').textContent = line.name;
     document.getElementById('line-code').textContent = line.id;
+
+    // Monitoring mode — entry-gated by default; active monitoring is opt-in
+    // when the host creates the line. In entry-gated mode we trust the
+    // entry face-gate and skip continuous liveness/match calls entirely.
+    const isActiveMonitoring = !!line.activeMonitoring;
+    {
+      const badge = document.getElementById('mode-badge');
+      badge.textContent = isActiveMonitoring ? 'ACTIVE MONITORING' : 'ENTRY-GATED';
+      badge.classList.toggle('is-active', isActiveMonitoring);
+    }
     const startedAt = Date.now();
     const clockEl = document.getElementById('line-clock');
     setInterval(() => {
@@ -361,16 +372,28 @@
       // set initial mute state on the mic track.
       applyMicMute();
 
-      stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
-        refPhoto: isDemo ? null : me.photo,
-        tickMs: 1800,
-        cb: livenessCallback,
-      });
-
+      // Voice-activity detection always runs — it's local, cheap, and
+      // drives the speaking-glow on tiles. Independent of monitoring mode.
       stopVad = cqFacetec.startVoiceActivity(selfStream, (speaking) => {
         myLocal.speaking = speaking && !myLocal.muted && myLocal.liveness === 'verified';
         publishMe();
       });
+
+      if (isActiveMonitoring) {
+        // High-security mode: continuous liveness + identity-match each tick.
+        stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
+          refPhoto: isDemo ? null : me.photo,
+          tickMs: 1800,
+          cb: livenessCallback,
+        });
+      } else {
+        // Default mode: trust the entry face-gate. Lock in 'verified' so
+        // tiles never flip to away/intruder for the rest of the call.
+        myLocal.liveness = 'verified';
+        setSelfPreviewState('verified');
+        setPersistentStateBanner('verified');
+        publishMe();
+      }
     };
 
     // When an unauthorized face is detected in front of the user's camera,
@@ -609,21 +632,28 @@
       setMic(preHoldMuted);
       setCallAudioSilenced(false);
 
-      myLocal.liveness = 'verifying';
-      setSelfPreviewState('verifying');
-      setPersistentStateBanner('verifying');
-
-      // Restart continuous liveness loop.
+      // VAD always restarts — it's the speaking indicator.
       if (selfStream && selfVideo) {
-        stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
-          refPhoto: isDemo ? null : me.photo,
-          tickMs: 1800,
-          cb: livenessCallback,
-        });
         stopVad = cqFacetec.startVoiceActivity(selfStream, (speaking) => {
           myLocal.speaking = speaking && !myLocal.muted && myLocal.liveness === 'verified';
           publishMe();
         });
+        if (isActiveMonitoring) {
+          myLocal.liveness = 'verifying';
+          setSelfPreviewState('verifying');
+          setPersistentStateBanner('verifying');
+          stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
+            refPhoto: isDemo ? null : me.photo,
+            tickMs: 1800,
+            cb: livenessCallback,
+          });
+        } else {
+          // Entry-gated mode: returning from hold goes straight to verified
+          // (the hold-return overlay already re-verified the user).
+          myLocal.liveness = 'verified';
+          setSelfPreviewState('verified');
+          setPersistentStateBanner('verified');
+        }
       }
       publishMe();
     };
