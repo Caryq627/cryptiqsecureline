@@ -41,22 +41,23 @@
             <circle class="cq-dot cq-dot-3" cx="18"  cy="0" r="6" fill="#2ec4b6"/>
           </g>
         </svg>
-        <div>
-          <div class="name" id="line-name">Secure Line</div>
-          <div class="meta">
-            <span id="line-code">—</span> · <span id="line-clock">00:00</span>
-          </div>
+        <div class="line-id-text">
+          <span class="name" id="line-name">Secure Line</span>
+          <span class="sep" aria-hidden="true">·</span>
+          <span class="code" id="line-code">—</span>
+          <span class="sep" aria-hidden="true">·</span>
+          <span class="clock"><span class="live-dot" aria-hidden="true"></span><span id="line-clock">00:00</span></span>
         </div>
       </div>
       <div class="rail-meta">
-        <span class="live-indicator"><span class="dot"></span>LIVE · VOICE</span>
-        <span id="roster-count">0 verified</span>
-        <span id="provider-badge" class="provider-badge is-live" title="Live identity verification"><span class="dot"></span>LIVE VERIFY</span>
-        <span id="mode-badge" class="mode-badge" title="Monitoring mode">ENTRY-GATED</span>
+        <span id="roster-count" title="Verified attendees">0/0</span>
+        <span id="mode-badge" class="mode-badge" title="Monitoring mode">MONITORED</span>
         <button id="share-btn-top" class="btn-icon btn-icon-sm" type="button" title="Share a link to this line" aria-label="Share link">
-          <span data-icon="link"></span>
+          <span data-icon="share"></span>
         </button>
-        <button id="demo-toggle" class="btn btn-ghost btn-sm" type="button" title="Demo controls" style="display:none;"><span data-icon="sparkles"></span><span class="demo-label">&nbsp;DEMO</span></button>
+        <button id="demo-toggle" class="btn-icon btn-icon-sm" type="button" title="Demo controls" aria-label="Demo controls" style="display:none;">
+          <span data-icon="sparkles"></span>
+        </button>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
       </div>
     </header>
@@ -84,7 +85,7 @@
         <span data-icon="bell"></span>
       </button>
       <button class="btn-icon" id="share-btn-bottom" title="Share a link" aria-label="Share link">
-        <span data-icon="link"></span>
+        <span data-icon="share"></span>
       </button>
       <button class="btn-icon" id="hold-btn" title="Hold — you stop hearing the call (O)" aria-label="Hold">
         <span data-icon="pause"></span>
@@ -168,36 +169,24 @@
     </div>
   </div>
 
-  <!-- Demo panel — simulate away/intruder/intruder for peers to showcase
-       the detection states. Only renders when ?demo=1. -->
-  <div id="demo-panel" style="
-    position: fixed; right: 20px; top: 78px;
-    background: var(--bg-raise);
-    border: 1px solid var(--accent-line);
-    border-radius: var(--r-soft);
-    padding: 14px;
-    box-shadow: var(--glow);
-    z-index: 25;
-    display: none;
-    font-size: 12px;
-    min-width: 220px;
-  ">
-    <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.18em; color:var(--accent); margin-bottom:10px;">SIMULATE · YOU</div>
-    <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">
-      <button class="btn btn-ghost btn-sm" id="sim-away" type="button" style="justify-content:flex-start;">Off camera · away</button>
-      <button class="btn btn-ghost btn-sm" id="sim-intruder" type="button" style="justify-content:flex-start;">Different face · intruder</button>
-      <button class="btn btn-ghost btn-sm" id="sim-verified" type="button" style="justify-content:flex-start;">Back in frame · verified</button>
+  <!-- Demo panel — simulate states to showcase detection. Only ?demo=1.
+       Positioned safely below the call-header at every breakpoint, with
+       its own scroll if it gets tall on small screens. -->
+  <div id="demo-panel" class="demo-panel" role="dialog" aria-label="Demo simulation panel">
+    <div class="demo-panel-row">SIMULATE · YOU</div>
+    <div class="demo-panel-group">
+      <button class="btn btn-ghost btn-sm" id="sim-away" type="button">Off camera · away</button>
+      <button class="btn btn-ghost btn-sm" id="sim-intruder" type="button">Different face · intruder</button>
+      <button class="btn btn-ghost btn-sm" id="sim-verified" type="button">Back in frame · verified</button>
     </div>
-    <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.18em; color:var(--accent); margin-bottom:10px;">SIMULATE · OTHERS</div>
-    <div style="display:flex; flex-direction:column; gap:6px;">
-      <button class="btn btn-ghost btn-sm" id="sim-peer-speak" type="button" style="justify-content:flex-start;">Random peer speaks</button>
-      <button class="btn btn-ghost btn-sm" id="sim-peer-hand" type="button" style="justify-content:flex-start;">Random peer raises hand</button>
-      <button class="btn btn-ghost btn-sm" id="sim-peer-intruder" type="button" style="justify-content:flex-start;">Peer flagged · intruder</button>
+    <div class="demo-panel-row">SIMULATE · OTHERS</div>
+    <div class="demo-panel-group">
+      <button class="btn btn-ghost btn-sm" id="sim-peer-speak" type="button">Random peer speaks</button>
+      <button class="btn btn-ghost btn-sm" id="sim-peer-hand" type="button">Random peer raises hand</button>
+      <button class="btn btn-ghost btn-sm" id="sim-peer-intruder" type="button">Peer flagged · intruder</button>
     </div>
-    <div style="font-family:var(--font-mono); font-size:9px; letter-spacing:0.16em; color:var(--fg-dim); margin-top:10px; line-height:1.5;">
-      Real triggers also work:<br>
-      • cover camera → away<br>
-      • another face in frame → intruder
+    <div class="demo-panel-hint">
+      Real triggers also work: cover the camera → away · second face in frame → intruder.
     </div>
   </div>
 
@@ -272,21 +261,12 @@
     // calmer. Active-monitoring keeps the dark security-console aesthetic.
     // Re-applied after a microtask so this beats theme.js's stored-pref init.
     if (!isActiveMonitoring) {
-      document.body.classList.add('theme-light');
-    }
-    // Toggle live-vs-sim on the verification pill.
-    {
-      const pb = document.getElementById('provider-badge');
-      if (pb) {
-        if (cqFacetec.simMode) {
-          pb.classList.remove('is-live');
-          pb.classList.add('is-sim');
-          pb.title = 'Simulation mode';
-          pb.lastChild.textContent = 'SIMULATION';
-        } else {
-          pb.title = `Live identity verification · min match ${cqFacetec.minMatchLevel}/9`;
-        }
-      }
+      // theme.js runs init() on DOMContentLoaded and may remove theme-light
+      // based on the user's stored pref. Apply it once now AND again after
+      // init has had its turn so we win the race either way.
+      const applyEntryGatedLight = () => document.body.classList.add('theme-light');
+      applyEntryGatedLight();
+      document.addEventListener('DOMContentLoaded', applyEntryGatedLight);
     }
     const startedAt = Date.now();
     const clockEl = document.getElementById('line-clock');
@@ -1007,7 +987,7 @@
     } else {
       demoBtn.style.display = '';
       demoBtn.addEventListener('click', () => {
-        demoPanel.style.display = demoPanel.style.display === 'block' ? 'none' : 'block';
+        demoPanel.classList.toggle('is-open');
       });
 
       // Force "self" state — relies on the active-monitoring loop being on.

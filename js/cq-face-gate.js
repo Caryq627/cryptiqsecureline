@@ -129,7 +129,10 @@
             if (timer) { clearInterval(timer); timer = null; }
             setTimeout(() => {
               cleanup();
-              if (typeof onVerified === 'function') onVerified();
+              // Pass the captured frame + matchLevel to the caller so it
+              // can be used as a reference photo for downstream matching
+              // (e.g. seeding a demo participant with a real face).
+              if (typeof onVerified === 'function') onVerified({ frame: r.frame, matchLevel: r.matchLevel, zoom: r.zoom });
             }, 420);
           } else if (r.refUnreadable) {
             // Hard fail: enrolled photo can't be processed for matching.

@@ -204,6 +204,16 @@
   <script src="js/theme.js"></script>
   <script src="js/secure-line.js"></script>
   <script>
+    // Live verification provider — same on every page.
+    window.CQ_FACETEC = {
+      server:    'https://54.211.82.159.sslip.io',
+      deviceKey: 'dNcawGQtDA4vGqAYgR2lUTmlmAivtfNT'
+    };
+  </script>
+  <script src="js/facetec-bridge.js"></script>
+  <script src="js/cq-face-gate.js"></script>
+  <script src="js/cq-connecting.js"></script>
+  <script>
     cqIconsHydrate();
 
     // Dismiss the intro loader after the animation has had time to breathe.
@@ -243,12 +253,14 @@
       alert('That doesn’t look like a secure line link.');
     });
 
-    // "Try a sample call" → seed a fully-populated line and drop the user
-    // into a call room with ?demo=1 (which exposes the simulate panel) and
-    // active-monitoring on (so the simulate buttons actually do something).
+    // "Try a sample call" → step 1: capture the user's actual face via
+    // cqFaceGate, then seed a demo line that uses that frame as the host's
+    // identity. Real face = real identity matching during the call, so the
+    // simulate buttons actually demonstrate the live verification system.
     document.getElementById('try-demo').addEventListener('click', (e) => {
       e.preventDefault();
-      const svg = (label, bg) => 'data:image/svg+xml;base64,' + btoa(
+
+      const svgPlaceholder = (label, bg) => 'data:image/svg+xml;base64,' + btoa(
         `<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'>` +
         `<rect width='200' height='200' fill='${bg}'/>` +
         `<circle cx='100' cy='78' r='34' fill='rgba(255,255,255,0.25)'/>` +
@@ -256,17 +268,28 @@
         `<text x='100' y='112' text-anchor='middle' font-family='DM Sans' font-size='18' font-weight='700' fill='white' letter-spacing='2'>${label}</text>` +
         `</svg>`
       );
-      // Active-monitoring on so the demo panel's sim-away / sim-intruder
-      // controls have something to control. Otherwise entry-gated mode locks
-      // the user to "verified" and the buttons are no-ops.
-      const line = cqLine.createLine('Sample call · demo', { activeMonitoring: true });
-      const host = cqLine.addParticipant(line.id, { name: 'You (demo)',  photo: svg('YOU','#0f6660') });
-      cqLine.setHost(line.id, host.id);
-      cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svg('JC','#3d4a6b') });
-      cqLine.addParticipant(line.id, { name: 'Marcus Reid',     photo: svg('MR','#6b2f4a') });
-      cqLine.addParticipant(line.id, { name: 'Priya Natarajan', photo: svg('PN','#4a6b2f') });
-      cqLine.setSession({ lineId: line.id, participantId: host.id });
-      location.href = `call.html?line=${encodeURIComponent(line.id)}&me=${encodeURIComponent(host.id)}&demo=1`;
+
+      cqFaceGate.verify({
+        refPhoto: null,
+        headline: 'Capture your face',
+        sub: 'Quick face capture so the demo can verify identity during the call.',
+        cancelText: 'Skip demo',
+        onVerified: (gate) => {
+          const yourPhoto = (gate && gate.frame) ? gate.frame : svgPlaceholder('YOU', '#0f6660');
+          // Active-monitoring on so the simulate panel's away / intruder /
+          // verified buttons drive a real liveness loop using YOUR face.
+          const line = cqLine.createLine('Sample call · demo', { activeMonitoring: true });
+          const host = cqLine.addParticipant(line.id, { name: 'You',  photo: yourPhoto });
+          cqLine.setHost(line.id, host.id);
+          cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svgPlaceholder('JC','#3d4a6b') });
+          cqLine.addParticipant(line.id, { name: 'Marcus Reid',     photo: svgPlaceholder('MR','#6b2f4a') });
+          cqLine.addParticipant(line.id, { name: 'Priya Natarajan', photo: svgPlaceholder('PN','#4a6b2f') });
+          cqLine.setSession({ lineId: line.id, participantId: host.id });
+          const callUrl = `call.html?line=${encodeURIComponent(line.id)}&me=${encodeURIComponent(host.id)}&demo=1`;
+          cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+        },
+        onCancel: () => { /* user backed out — stay on landing */ },
+      });
     });
   </script>
 </body>
