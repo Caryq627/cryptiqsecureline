@@ -207,16 +207,23 @@
     cqIconsHydrate();
 
     // Dismiss the intro loader after the animation has had time to breathe.
+    // ?skipIntro=1 (used after leaving a call) tears it down immediately so
+    // the user doesn't watch another 2.8s sequence on top of disconnect.
     (function dismissIntro() {
       const el = document.getElementById('intro-loader');
       if (!el) return;
-      // If user explicitly set ?skipIntro=1, hide immediately (useful for dev).
       const skip = new URLSearchParams(location.search).get('skipIntro') === '1';
-      const delay = skip ? 0 : 2800;  // leave room for the link-up sequence
+      if (skip) {
+        // Snap to gone — no flash, no transition.
+        el.style.transition = 'none';
+        el.classList.add('is-done');
+        el.remove();
+        return;
+      }
       setTimeout(() => {
         el.classList.add('is-done');
         setTimeout(() => el.remove(), 700);
-      }, delay);
+      }, 2800);
     })();
 
     document.getElementById('paste-link').addEventListener('click', async (e) => {

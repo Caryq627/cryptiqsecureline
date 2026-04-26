@@ -1228,6 +1228,40 @@ input, textarea, select {
 }
 .face-gate-card .btn-ghost { margin-top: 6px; }
 
+/* Tiny FACETEC LIVE / SIMULATION pill. Tells the user at a glance whether
+   they're hitting the real FaceTec REST endpoint or running in sim mode. */
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.20em;
+  padding: 4px 9px;
+  border-radius: 999px;
+  margin: 0 auto 8px;
+  border: 1px solid var(--surface-border);
+}
+.provider-badge .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+}
+.provider-badge.is-live {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.provider-badge.is-live .dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  animation: cq-pulse 1.6s infinite;
+}
+.provider-badge.is-sim {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: rgba(255,181,71,0.35);
+}
+.provider-badge.is-sim .dot { background: var(--warn); }
+
 /* ============================================================
    Hold overlay — user is paused and re-verifies to return
    ============================================================ */

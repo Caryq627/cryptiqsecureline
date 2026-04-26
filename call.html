@@ -51,6 +51,7 @@
       <div class="rail-meta">
         <span class="live-indicator"><span class="dot"></span>LIVE · VOICE</span>
         <span id="roster-count">0 verified</span>
+        <span id="provider-badge" class="provider-badge is-live" title="Real FaceTec REST endpoint"><span class="dot"></span>FACETEC LIVE</span>
         <span id="mode-badge" class="mode-badge" title="Monitoring mode">ENTRY-GATED</span>
         <button id="share-btn-top" class="btn-icon btn-icon-sm" type="button" title="Share a link to this line" aria-label="Share link">
           <span data-icon="link"></span>
@@ -266,6 +267,20 @@
     // Re-applied after a microtask so this beats theme.js's stored-pref init.
     if (!isActiveMonitoring) {
       document.body.classList.add('theme-light');
+    }
+    // Reflect real-vs-sim FaceTec on the in-call provider pill.
+    {
+      const pb = document.getElementById('provider-badge');
+      if (pb) {
+        if (cqFacetec.simMode) {
+          pb.classList.remove('is-live');
+          pb.classList.add('is-sim');
+          pb.title = 'Simulation mode — no real FaceTec server configured';
+          pb.lastChild.textContent = 'SIMULATION';
+        } else {
+          pb.title = `Real FaceTec REST · min match level ${cqFacetec.minMatchLevel}/9`;
+        }
+      }
     }
     const startedAt = Date.now();
     const clockEl = document.getElementById('line-clock');
@@ -645,26 +660,46 @@
 
     // ---------- Lifecycle ----------
 
+    // Run-once cleanup so multiple leave triggers (button + pagehide +
+    // beforeunload) don't double-close the stream or double-publish.
+    let cleanedUp = false;
+    const cleanupCallState = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      try { publishLeave(); } catch {}
+      try { cqLine.clearLivePresence(line.id, me.id); } catch {}
+      try { if (stopLiveness) stopLiveness(); } catch {}
+      try { if (stopVad) stopVad(); } catch {}
+      try { cqFacetec.closeStream(selfStream); } catch {}
+      try { cqLine.clearSession(); } catch {}
+    };
+
     const leaveCall = () => {
-      publishLeave();
-      cqLine.clearLivePresence(line.id, me.id);
-      if (stopLiveness) stopLiveness();
-      if (stopVad) stopVad();
-      cqFacetec.closeStream(selfStream);
-      cqLine.clearSession();
-      // Reverse-of-connecting overlay before bouncing home.
+      cleanupCallState();
+      // Append ?skipIntro=1 so the home page doesn't replay its 2.8s
+      // intro on top of our 2.4s disconnect animation. Use location.replace
+      // so the back-button doesn't bounce the user into a torn-down call
+      // page (camera released, presence cleared, listeners orphaned).
+      const homeUrl = '/?skipIntro=1';
+      const goHome = () => { try { location.replace(homeUrl); } catch { location.href = homeUrl; } };
+
       if (window.cqDisconnecting && cqDisconnecting.show) {
-        cqDisconnecting.show({ onDone: () => { location.href = '/'; } });
+        let navigated = false;
+        const navOnce = () => { if (!navigated) { navigated = true; goHome(); } };
+        cqDisconnecting.show({ onDone: navOnce });
+        // Fail-safe: if the animation's setTimeout gets throttled (tab
+        // backgrounded, frozen worker, etc.) we still navigate.
+        setTimeout(navOnce, 3500);
       } else {
-        location.href = '/';
+        goHome();
       }
     };
 
-    window.addEventListener('beforeunload', () => {
-      publishLeave();
-      cqLine.clearLivePresence(line.id, me.id);
-      cqFacetec.closeStream(selfStream);
-    });
+    // Cleanup on every exit path. iOS Safari often skips beforeunload but
+    // fires pagehide reliably; desktop fires both. Running both is fine
+    // since cleanupCallState is idempotent.
+    window.addEventListener('beforeunload', cleanupCallState);
+    window.addEventListener('pagehide',     cleanupCallState);
 
     // ---------- Utils ----------
 

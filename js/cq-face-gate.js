@@ -30,6 +30,10 @@
     overlay.className = 'face-gate-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
+    const provider = (root.cqFacetec && !root.cqFacetec.simMode)
+      ? `<span class="provider-badge is-live" title="Live FaceTec REST endpoint"><span class="dot"></span>FACETEC LIVE · MIN MATCH ${root.cqFacetec.minMatchLevel}</span>`
+      : `<span class="provider-badge is-sim" title="Simulation mode — no real FaceTec server configured"><span class="dot"></span>SIMULATION MODE</span>`;
+
     overlay.innerHTML =
       `<div class="face-gate-card">
          <div class="card-eyebrow"><span class="dot"></span>IDENTITY GATE</div>
@@ -41,6 +45,7 @@
            <div class="scanline"></div>
          </div>
          <div class="viewfinder-status" data-role="status">STARTING CAMERA…</div>
+         ${provider}
          <button class="btn btn-ghost btn-block" data-role="cancel" type="button">${escapeHtml(cancelText)}</button>
        </div>`;
     document.body.appendChild(overlay);
@@ -116,7 +121,9 @@
           statusEl.textContent = 'VERIFYING LIVENESS…';
           const r = await cqFacetec.gate(video, refPhoto);
           if (r.ok) {
-            statusEl.textContent = 'VERIFIED · ENTERING…';
+            statusEl.textContent = typeof r.matchLevel === 'number'
+              ? `VERIFIED · MATCH ${r.matchLevel}/9 · ENTERING…`
+              : 'VERIFIED · ENTERING…';
             statusEl.className = 'viewfinder-status is-verified';
             vf.className = 'viewfinder is-verified';
             if (timer) { clearInterval(timer); timer = null; }
@@ -124,9 +131,19 @@
               cleanup();
               if (typeof onVerified === 'function') onVerified();
             }, 420);
-          } else if (r.reason === 'no-match' && !inGrace) {
-            // Only surface a hard "does not match" after the settle window.
-            statusEl.textContent = 'FACE DOES NOT MATCH';
+          } else if (r.refUnreadable) {
+            // Hard fail: enrolled photo can't be processed by FaceTec.
+            // Without re-enrolling, the user can never pass — don't lie.
+            statusEl.textContent = 'ENROLLED PHOTO UNUSABLE — RE-ENROLL';
+            statusEl.className = 'viewfinder-status is-denied';
+            vf.className = 'viewfinder is-denied';
+            if (timer) { clearInterval(timer); timer = null; }
+          } else if (String(r.reason || '').startsWith('no-match') && !inGrace) {
+            // Surface the actual matchLevel so it's clear how far off we are.
+            const lvl = r.bestMatchLevel;
+            statusEl.textContent = (typeof lvl === 'number')
+              ? `FACE DOES NOT MATCH · LEVEL ${lvl}/9 (NEED ${cqFacetec.minMatchLevel}+)`
+              : 'FACE DOES NOT MATCH';
             statusEl.className = 'viewfinder-status is-denied';
             vf.className = 'viewfinder is-denied';
           } else {

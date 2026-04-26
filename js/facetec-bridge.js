@@ -12,9 +12,16 @@
     deviceKey:    null,
     liveness2DPath: '/liveness-2d',
     match2DPath:    '/match-2d-2d',
-    minMatchLevel: 3,
+    // FaceTec matchLevel scale: 0 (clearly different) … 9-10 (clearly same).
+    // Anything below 6 is unreliable for identity verification — at 3 we
+    // were letting moderately similar faces through. 6 is the production
+    // threshold FaceTec recommends for 1:1 identity matching.
+    minMatchLevel: 6,
     tickMs:        1800,
     simMode:       true,
+    // When true, every /liveness-2d and /match-2d-2d response is logged so
+    // it's visible the real server is being hit and what verdict it gave.
+    verbose:       true,
   };
 
   // Honor environment config
@@ -205,8 +212,9 @@
     const i = dataUrl.indexOf(marker);
     return i >= 0 ? dataUrl.slice(i + marker.length) : dataUrl;
   };
-  let _loggedLiveness = false;
-  let _loggedMatch    = false;
+  // Per-call counters so logs are easy to skim ("liveness #4 → ok").
+  let _livenessCount = 0;
+  let _matchCount    = 0;
 
   // Permissive liveness interpretation — if the Dashboard's /liveness-2d
   // endpoint returned 200 OK, we count it as a pass.
@@ -232,39 +240,55 @@
     return { ok: true };
   };
 
-  // Match: respect an explicit matchLevel threshold when the server gives
-  // us one. Also distinguish "no face in the current frame" (noFace) from
-  // "different face confirmed" (clear mismatch) — callers use this to
-  // decide between AWAY and INTRUDER.
+  // Match: strict identity verification. We FAIL CLOSED on any ambiguous
+  // server response — never default to "ok: true" when we don't have an
+  // explicit, threshold-clearing matchLevel.
+  //
+  // Three failure shapes the caller can act on:
+  //   - noFace:      face wasn't in the current frame → AWAY (not intruder)
+  //   - refUnreadable: enrolled photo couldn't be processed → enrollment is
+  //     broken, FAIL CLOSED. Used to silently pass — that's the bug a user
+  //     hit when uploading someone else's face also exposed: when the ref
+  //     was unparseable we'd let them through.
+  //   - mismatch:    face IS in frame, server returned matchLevel < threshold
   const interpretMatch = (data, minLevel) => {
-    if (!data || typeof data !== 'object') return { ok: true };
+    // Defensive: server gave us nothing meaningful. Fail closed.
+    if (!data || typeof data !== 'object') {
+      return { ok: false, reason: 'no-response-data' };
+    }
 
-    // FaceTec reports per-image processing status. If image0 (the current
-    // frame) had no face found, this isn't an identity mismatch — the user
-    // just isn't in front of the camera. Route to "away" instead.
+    // FaceTec per-image processing status: 0 = OK, anything else = couldn't
+    // process that image. Image 0 = current frame, image 1 = ref photo.
     const img0Status = data.image0ProcessingStatusEnumInt;
     if (typeof img0Status === 'number' && img0Status !== 0) {
-      return { ok: false, noFace: true, reason: 'no-face-in-frame' };
+      return { ok: false, noFace: true, reason: 'no-face-in-frame', img0Status };
     }
     const img1Status = data.image1ProcessingStatusEnumInt;
     if (typeof img1Status === 'number' && img1Status !== 0) {
-      // Reference image couldn't be processed — our problem, not the user's.
-      return { ok: true, reason: 'ref-photo-unreadable' };
+      // Enrolled photo can't be matched against. Fail closed — this is the
+      // ONLY safe outcome when we can't extract features from the reference.
+      return { ok: false, refUnreadable: true, reason: 'ref-photo-unreadable', img1Status };
     }
 
     if (data.success === false && data.errorMessage) {
-      // If the message says "no face" / "could not find face" etc., treat
-      // as noFace (away), not mismatch (intruder).
       const msg = String(data.errorMessage).toLowerCase();
       if (msg.includes('no face') || msg.includes('could not find') || msg.includes('face not')) {
         return { ok: false, noFace: true, reason: data.errorMessage };
       }
       return { ok: false, reason: data.errorMessage };
     }
-    if (typeof data.matchLevel === 'number') {
-      return { ok: data.matchLevel >= minLevel, matchLevel: data.matchLevel };
+
+    // Hard threshold. matchLevel must be present AND meet the minimum.
+    // Missing matchLevel used to fall through to ok:true — that's how a
+    // mismatched face could slip past. Now: missing matchLevel = fail.
+    if (typeof data.matchLevel !== 'number') {
+      return { ok: false, reason: 'no-match-level-returned', raw: data };
     }
-    return { ok: true };
+    return {
+      ok: data.matchLevel >= minLevel,
+      matchLevel: data.matchLevel,
+      reason: data.matchLevel >= minLevel ? 'matched' : `below-threshold(${data.matchLevel}<${minLevel})`,
+    };
   };
 
   const liveness2D = async (frameDataUrl) => {
@@ -284,15 +308,22 @@
       }
       netFailStreak = 0;
       const data = await res.json();
-      if (!_loggedLiveness) {
-        _loggedLiveness = true;
-        try { console.log('[cq/facetec] first /liveness-2d response →', data); } catch {}
-      }
+      _livenessCount++;
       const verdict = interpretLiveness(data);
-      // Map back to the shape the rest of the code expects.
+      if (config.verbose) {
+        try {
+          console.log(
+            `[cq/facetec] /liveness-2d #${_livenessCount} →`,
+            verdict.ok ? 'PASS' : 'FAIL',
+            'isLikelyRealPerson=' + data.isLikelyRealPerson,
+            'success=' + data.success,
+            data.errorMessage ? `error="${data.errorMessage}"` : ''
+          );
+        } catch {}
+      }
       return {
         success: verdict.ok,
-        isLikelyRealPerson: verdict.ok,
+        isLikelyRealPerson: data.isLikelyRealPerson,
         reason: verdict.reason,
         raw: data,
       };
@@ -322,15 +353,26 @@
       }, 18_000);
       if (!res.ok) return { success: false, httpStatus: res.status, networkError: true };
       const data = await res.json();
-      if (!_loggedMatch) {
-        _loggedMatch = true;
-        try { console.log('[cq/facetec] first /match-2d-2d response →', data); } catch {}
-      }
+      _matchCount++;
       const verdict = interpretMatch(data, config.minMatchLevel);
+      if (config.verbose) {
+        try {
+          console.log(
+            `[cq/facetec] /match-2d-2d #${_matchCount} →`,
+            verdict.ok ? 'PASS' : 'FAIL',
+            'matchLevel=' + data.matchLevel,
+            'minRequired=' + config.minMatchLevel,
+            'reason=' + verdict.reason,
+            'img0Status=' + data.image0ProcessingStatusEnumInt,
+            'img1Status=' + data.image1ProcessingStatusEnumInt
+          );
+        } catch {}
+      }
       return {
         success: verdict.ok,
         matchLevel: verdict.matchLevel,
         noFace: !!verdict.noFace,
+        refUnreadable: !!verdict.refUnreadable,
         reason: verdict.reason,
         raw: data,
       };
@@ -368,7 +410,9 @@
     ];
 
     let lastReason = (faceN === 0) ? 'no-face' : 'liveness-failed';
+    let bestMatchLevel = -1;
     let lastFrame  = null;
+    let refUnreadableSeen = false;
 
     for (const { name, frame } of attempts) {
       if (!frame) continue;
@@ -377,12 +421,118 @@
       if (!live || !live.success) { lastReason = 'liveness-failed'; continue; }
       if (ref) {
         const m = await match2D(frame, ref);
+        if (m.refUnreadable) {
+          // Enrolled photo is broken — every attempt will hit this same
+          // failure. Bail early with a distinct reason so the caller can
+          // tell the user to re-enroll instead of just looping forever.
+          refUnreadableSeen = true;
+          lastReason = 'ref-unreadable';
+          break;
+        }
         if (m.noFace)   { lastReason = 'no-face'; continue; }
-        if (!m.success) { lastReason = 'no-match'; continue; }
+        if (typeof m.matchLevel === 'number' && m.matchLevel > bestMatchLevel) {
+          bestMatchLevel = m.matchLevel;
+        }
+        if (!m.success) {
+          // Distinguish "did not match" (real mismatch with confidence) from
+          // "below threshold" (low confidence — could be lighting/angle).
+          lastReason = (typeof m.matchLevel === 'number')
+            ? `no-match(level=${m.matchLevel})`
+            : 'no-match';
+          continue;
+        }
+        return { ok: true, frame, zoom: name, matchLevel: m.matchLevel };
       }
+      // No reference photo at all: liveness is the gate. NOTE: callers that
+      // do this lose identity verification entirely; only used for things
+      // like "is anyone present at all".
       return { ok: true, frame, zoom: name };
     }
-    return { ok: false, reason: lastReason, frame: lastFrame };
+    return {
+      ok: false,
+      reason: lastReason,
+      frame: lastFrame,
+      bestMatchLevel: bestMatchLevel >= 0 ? bestMatchLevel : null,
+      refUnreadable: refUnreadableSeen,
+    };
+  };
+
+  // ---------- enrollment photo validation ----------
+  //
+  // Confirms an uploaded reference photo actually contains a recognizable
+  // face that FaceTec can extract features from. Without this, a user could
+  // upload a non-face image (or a photo where the face is too small/blurry)
+  // and silently break identity matching for that participant.
+  //
+  // Strategy: feed the photo into /match-2d-2d as BOTH images. If the server
+  // can process it, it'll come back with image0Status=0 and image1Status=0
+  // (and a high matchLevel since both images are identical). If it can't
+  // find a face, image*Status will be non-zero and we reject the upload.
+  //
+  // Falls back to FaceDetector when in sim mode.
+  const verifyEnrollmentPhoto = async (dataUrl) => {
+    if (!dataUrl) return { ok: false, reason: 'no-photo' };
+
+    // Quick pre-check with the browser FaceDetector when available.
+    const fd = getFaceDetector();
+    if (fd) {
+      try {
+        const img = new Image();
+        img.src = dataUrl;
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+        const faces = await fd.detect(img);
+        if (faces.length === 0) {
+          return { ok: false, reason: 'no-face-detected', source: 'browser' };
+        }
+        if (faces.length > 1) {
+          return { ok: false, reason: 'multiple-faces', source: 'browser' };
+        }
+      } catch {
+        // FaceDetector can throw on certain image types — fall through to FaceTec.
+      }
+    }
+
+    if (config.simMode) {
+      // Without server-side validation we trust the FaceDetector verdict.
+      return { ok: true, source: 'sim' };
+    }
+
+    // Server-side validation: round-trip the photo through /match-2d-2d so
+    // FaceTec confirms it can extract face features.
+    try {
+      const res = await _fetchWithTimeout(config.server + config.match2DPath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-Key': config.deviceKey },
+        body: JSON.stringify({
+          image0: toRawBase64(dataUrl),
+          image1: toRawBase64(dataUrl),
+          minMatchLevel: 0,
+        }),
+      }, 18_000);
+      if (!res.ok) {
+        return { ok: false, reason: 'server-error', httpStatus: res.status };
+      }
+      const data = await res.json();
+      if (config.verbose) {
+        try {
+          console.log(
+            '[cq/facetec] enrollment-photo check →',
+            'img0Status=' + data.image0ProcessingStatusEnumInt,
+            'img1Status=' + data.image1ProcessingStatusEnumInt,
+            'matchLevel=' + data.matchLevel
+          );
+        } catch {}
+      }
+      const s0 = data.image0ProcessingStatusEnumInt;
+      const s1 = data.image1ProcessingStatusEnumInt;
+      if ((typeof s0 === 'number' && s0 !== 0) ||
+          (typeof s1 === 'number' && s1 !== 0)) {
+        return { ok: false, reason: 'no-face-detected', source: 'facetec', raw: data };
+      }
+      return { ok: true, source: 'facetec', raw: data };
+    } catch (e) {
+      return { ok: false, reason: 'network-error', error: String(e) };
+    }
   };
 
   // ---------- continuous background liveness ----------
@@ -648,9 +798,11 @@
   root.cqFacetec = {
     configure,
     get simMode() { return config.simMode; },
+    get minMatchLevel() { return config.minMatchLevel; },
     captureFrame, captureFrameAtZoom, captureFullFrame, captureAroundFace,
     captureFromDataUrl,
     detectFaceCount, faceDetectorSupported, liveness2D, match2D,
+    verifyEnrollmentPhoto,
     gate, startContinuousLiveness, startVoiceActivity,
     openCamera, closeStream,
   };

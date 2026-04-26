@@ -600,11 +600,39 @@
       });
       // Downscale to <= 480px for storage size.
       const resized = await cqFacetec.captureFromDataUrl(dataUrl, 480);
-      capFrame = resized;
+
+      // Show preview immediately so the user sees what they uploaded, then
+      // validate. We block the Enroll button until validation succeeds.
       cap.uploadImg.src = resized;
       cap.uploadImg.style.display = '';
       cap.uploadPlaceholder.style.display = 'none';
-      cap.uploadStatus.textContent = 'PHOTO SET · ADD A NAME';
+      cap.uploadStatus.textContent = 'CHECKING PHOTO…';
+      cap.uploadStatus.className = 'viewfinder-status is-verifying';
+      cap.uploadPreview.className = 'viewfinder is-verifying';
+      capFrame = null;
+      cap.save.disabled = true;
+
+      // Server-side enrollment validation: confirms FaceTec can extract
+      // face features from the photo. Without this a non-face image (or
+      // a face too blurry/small to encode) silently passes setup and
+      // breaks identity matching for that participant.
+      const verdict = await cqFacetec.verifyEnrollmentPhoto(resized);
+      if (!verdict.ok) {
+        const msg = verdict.reason === 'multiple-faces'
+          ? 'TOO MANY FACES IN PHOTO'
+          : verdict.reason === 'no-face-detected'
+          ? 'NO CLEAR FACE — TRY ANOTHER PHOTO'
+          : 'PHOTO REJECTED — TRY ANOTHER';
+        cap.uploadStatus.textContent = msg;
+        cap.uploadStatus.className = 'viewfinder-status is-denied';
+        cap.uploadPreview.className = 'viewfinder is-denied';
+        capFrame = null;
+        cap.save.disabled = true;
+        return;
+      }
+
+      capFrame = resized;
+      cap.uploadStatus.textContent = 'PHOTO VERIFIED · ADD A NAME';
       cap.uploadStatus.className = 'viewfinder-status is-verified';
       cap.uploadPreview.className = 'viewfinder is-verified';
       cap.save.disabled = !cap.name.value.trim();
