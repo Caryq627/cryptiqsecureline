@@ -66,6 +66,10 @@
         <span class="hm-icon" data-icon="share"></span>
         <span>Share link</span>
       </button>
+      <button class="hm-item" id="hm-camera" type="button" role="menuitem">
+        <span class="hm-icon" data-icon="refresh"></span>
+        <span>Refresh camera</span>
+      </button>
       <button class="hm-item" id="hm-monitoring" type="button" role="menuitem">
         <span class="hm-icon" data-icon="shieldCheck"></span>
         <span class="hm-label" id="hm-monitoring-label">Active monitoring · OFF</span>
@@ -566,13 +570,21 @@
     };
 
     const startSelfCamera = async () => {
+      // Re-entrant: tear down any prior stream + loops before opening
+      // a fresh one. This is what makes "Refresh camera" actually work
+      // when the camera fails to load on return-from-background.
+      try { if (stopLiveness) { stopLiveness(); stopLiveness = null; } } catch {}
+      try { if (stopVad) { stopVad(); stopVad = null; } } catch {}
+      try { if (selfStream) cqFacetec.closeStream(selfStream); } catch {}
+      selfStream = null;
       try {
         selfStream = await cqFacetec.openCamera(selfVideo, { audio: true });
       } catch {
-        // Camera denied — participant will show as permanently away.
+        // Camera denied / blocked — participant will show as permanently
+        // away until they tap "Refresh camera" in the hamburger menu.
         myLocal.liveness = 'away';
         setSelfPreviewState('away');
-        banner('Camera/mic blocked — others can\'t verify you', 'warn');
+        banner('Camera/mic blocked — tap menu › Refresh camera to retry', 'warn');
         publishMe();
         return;
       }
@@ -1376,6 +1388,30 @@
       closeHamburger();
     });
     hmShare.addEventListener('click', () => { closeHamburger(); openShareSheet(); });
+
+    // Refresh-camera item: tears down any zombie stream and re-opens the
+    // camera. iOS Safari in particular sometimes leaves the camera in a
+    // bad state after returning from a background tab — this is the user's
+    // recovery path without having to reload the page.
+    const hmCamera = document.getElementById('hm-camera');
+    if (hmCamera) {
+      hmCamera.addEventListener('click', async () => {
+        closeHamburger();
+        banner('Refreshing camera…');
+        await startSelfCamera();
+        banner('Camera refreshed');
+      });
+    }
+
+    // Auto-recover when returning to the tab. If the camera tracks died
+    // while we were backgrounded, tear them down and re-open. Cheap to
+    // run on every visibility change since startSelfCamera is idempotent.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      const tracks = (selfStream && selfStream.getTracks) ? selfStream.getTracks() : [];
+      const allLive = tracks.length > 0 && tracks.every(t => t.readyState === 'live');
+      if (!allLive) startSelfCamera();
+    });
 
     const demoPanel = document.getElementById('demo-panel');
     if (!isDemo) {

@@ -105,7 +105,7 @@
             <span>
               <span style="font-size:13px; font-weight:500; color: var(--fg);">Active identity monitoring</span>
               <span style="display:block; font-size:11px; color: var(--fg-muted); margin-top:2px;">
-                Continuously face-match every attendee during the call. Off = verify once at entry, then normal call.
+                Face-match continuously. Off = verify once at entry only.
               </span>
             </span>
             <span style="display:inline-flex; align-items:center;">
@@ -295,6 +295,10 @@
         document.getElementById('mode-toggle-row').classList.add('hidden');
         el.peopleSection.classList.remove('hidden');
         el.linksSection.classList.add('hidden');
+        // Re-show the add-attendee button. Step 3 hides it; coming back via
+        // Back used to leave it hidden — that's how users got stuck unable
+        // to re-enroll a participant whose photo had been rejected.
+        el.addBtn.classList.remove('hidden');
         el.nextBtn.innerHTML = 'Generate links <span data-icon="arrowRight"></span>';
         cqIconsHydrate(el.nextBtn);
         renderPeople();

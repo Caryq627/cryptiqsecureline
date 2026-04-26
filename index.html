@@ -269,12 +269,14 @@
         `</svg>`
       );
 
-      // Step 1: capture a reference photo of the user (no match yet —
-      // refPhoto is null so the gate just confirms a live face is present).
+      // Step 1: capture or upload a reference photo. Both paths run
+      // through verifyEnrollmentPhoto which rejects masks/sunglasses/
+      // small faces — so the demo only proceeds with a passable face.
       cqFaceGate.verify({
         refPhoto: null,
+        allowUpload: true,
         headline: 'Capture your face',
-        sub: 'Step 1 of 2 — this becomes the reference your live face will need to match.',
+        sub: 'Step 1 of 2 — take a photo or upload one. Eyes + mouth must be visible.',
         cancelText: 'Cancel demo',
         onVerified: (capture) => {
           const refPhoto = (capture && capture.frame) ? capture.frame : svgPlaceholder('YOU', '#0f6660');

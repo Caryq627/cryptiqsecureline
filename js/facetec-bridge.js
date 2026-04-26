@@ -176,6 +176,22 @@
     return _faceDetector;
   };
 
+  // Higher-fidelity detector for enrollment-time landmark checks (we want
+  // to know whether eyes + mouth are clearly detectable so we can reject
+  // masked / sunglassed photos).
+  let _faceDetectorHQ = null;
+  let _faceDetectorHQChecked = false;
+  const getFaceDetectorHQ = () => {
+    if (_faceDetectorHQChecked) return _faceDetectorHQ;
+    _faceDetectorHQChecked = true;
+    try {
+      if ('FaceDetector' in window) {
+        _faceDetectorHQ = new window.FaceDetector({ fastMode: false, maxDetectedFaces: 2 });
+      }
+    } catch { _faceDetectorHQ = null; }
+    return _faceDetectorHQ;
+  };
+
   const detectFaceCount = async (video) => {
     const fd = getFaceDetector();
     if (!fd || !video || !video.videoWidth) return null;
@@ -474,19 +490,46 @@
   const verifyEnrollmentPhoto = async (dataUrl) => {
     if (!dataUrl) return { ok: false, reason: 'no-photo' };
 
-    // Quick pre-check with the browser FaceDetector when available.
-    const fd = getFaceDetector();
-    if (fd) {
+    // Quick pre-check with the browser FaceDetector. When the browser
+    // returns landmarks, we also enforce eyes + mouth are clearly
+    // detectable — that rules out sunglasses, face masks, and other
+    // obstructions before we even hit the server.
+    const fdHQ = getFaceDetectorHQ();
+    if (fdHQ) {
       try {
         const img = new Image();
         img.src = dataUrl;
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
-        const faces = await fd.detect(img);
+        const faces = await fdHQ.detect(img);
         if (faces.length === 0) {
           return { ok: false, reason: 'no-face-detected', source: 'browser' };
         }
         if (faces.length > 1) {
           return { ok: false, reason: 'multiple-faces', source: 'browser' };
+        }
+        // Landmark-based obstruction check. FaceDetector returns landmarks
+        // with `type` fields ('eye', 'mouth', 'nose'). Browser support
+        // varies; if landmarks are reported, enforce. If not, fall through.
+        const f = faces[0];
+        const landmarks = f.landmarks || [];
+        if (landmarks.length > 0) {
+          const eyeCount   = landmarks.filter(l => l.type === 'eye').length;
+          const hasMouth   = landmarks.some(l => l.type === 'mouth');
+          if (eyeCount < 2) {
+            return { ok: false, reason: 'eyes-obstructed', source: 'browser' };
+          }
+          if (!hasMouth) {
+            return { ok: false, reason: 'mouth-obstructed', source: 'browser' };
+          }
+        }
+        // Bounding-box sanity: face has to be a meaningful fraction of
+        // the image. Tiny far-away faces enroll badly.
+        if (f.boundingBox) {
+          const minSide = Math.min(f.boundingBox.width, f.boundingBox.height);
+          const imgMin = Math.min(img.width, img.height);
+          if (minSide / imgMin < 0.18) {
+            return { ok: false, reason: 'face-too-small', source: 'browser' };
+          }
         }
       } catch {
         // FaceDetector can throw on certain image types — fall through to FaceTec.
@@ -494,7 +537,6 @@
     }
 
     if (config.simMode) {
-      // Without server-side validation we trust the FaceDetector verdict.
       return { ok: true, source: 'sim' };
     }
 
