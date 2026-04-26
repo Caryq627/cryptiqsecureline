@@ -195,6 +195,8 @@
     const url = new URL('guest.html', location.href);
     url.searchParams.set('line', line.id);
     url.searchParams.set('g', line.openToken);
+    // Embed line snapshot so the recipient hydrates locally before submit.
+    url.searchParams.set('d', encodePayload(serializeLineForLink(line)));
     return url.toString();
   };
 
@@ -265,12 +267,96 @@
     return line.participants.find(p => p.id === entry.participantId) || null;
   };
 
-  // Note: a secure line's shared link only encodes line id + shared token;
-  // the recipient still must pass the face match against an enrolled participant.
+  // ---------- self-contained URL payloads ----------
+  //
+  // Lines live in localStorage on the host's device. For cross-device link
+  // sharing (text the link to another phone) the recipient's browser has
+  // no record of the line. We embed a stripped-down snapshot of the line
+  // in every link as ?d=<base64-json>; on the receiving end we hydrate
+  // localStorage from that snapshot if the line isn't already there.
+  //
+  // We strip photos because data-URLs are too big for a URL (~30-100KB
+  // each, vs ~2-8KB practical URL limit). Cross-device users without
+  // photos get liveness-only entry; we capture their gate-passing frame
+  // and store it as their photo so active-monitoring still works after.
+
+  const serializeLineForLink = (line) => ({
+    v: 1,
+    id: line.id,
+    name: line.name,
+    sharedToken: line.sharedToken,
+    openToken: line.openToken || null,
+    activeMonitoring: !!line.activeMonitoring,
+    createdBy: line.createdBy || null,
+    createdAt: line.createdAt,
+    participants: (line.participants || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      role: p.role,
+      enrolledAt: p.enrolledAt,
+      // photo intentionally omitted — too large for URL
+    })),
+    oneTimeTokens: line.oneTimeTokens || {},
+  });
+
+  // base64-url (RFC 4648 §5) — URL-safe, no padding.
+  const encodePayload = (obj) => {
+    const json = JSON.stringify(obj);
+    const b64 = btoa(unescape(encodeURIComponent(json)));
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+
+  const decodePayload = (b64) => {
+    if (!b64) return null;
+    try {
+      const std = b64.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = std + '='.repeat((4 - std.length % 4) % 4);
+      const json = decodeURIComponent(escape(atob(padded)));
+      return JSON.parse(json);
+    } catch { return null; }
+  };
+
+  // Recipient-side: take a ?d= payload and store the line locally so
+  // every cqLine.* helper that reads from localStorage just works.
+  // If the line already exists locally (host's own device), MERGE instead
+  // of overwrite — preserve any photos we have and accept any newly-minted
+  // tokens or participants from the URL.
+  const hydrateFromPayload = (b64) => {
+    const payload = decodePayload(b64);
+    if (!payload || !payload.id) return null;
+    const existing = getLine(payload.id);
+    if (existing) {
+      const merged = {
+        ...existing,
+        ...payload,
+        // Preserve local presence + photos.
+        live: existing.live || {},
+        participants: (payload.participants || []).map(p => {
+          const local = (existing.participants || []).find(x => x.id === p.id);
+          return local ? { ...p, photo: local.photo } : p;
+        }),
+        oneTimeTokens: { ...(existing.oneTimeTokens || {}), ...(payload.oneTimeTokens || {}) },
+      };
+      saveLine(merged);
+      return merged;
+    }
+    // Brand-new line on this device — accept the snapshot wholesale.
+    const fresh = {
+      ...payload,
+      live: {},
+      pending: [],
+    };
+    saveLine(fresh);
+    return fresh;
+  };
+
+  // Note: a secure line's shared link encodes line id + shared token + a
+  // payload that lets the recipient's browser hydrate the line locally.
   const buildSharedLink = (line) => {
     const url = new URL('join.html', location.href);
     url.searchParams.set('line', line.id);
     url.searchParams.set('t', line.sharedToken);
+    url.searchParams.set('d', encodePayload(serializeLineForLink(line)));
     return url.toString();
   };
 
@@ -278,6 +364,7 @@
     const url = new URL('join.html', location.href);
     url.searchParams.set('line', line.id);
     url.searchParams.set('o', token);
+    url.searchParams.set('d', encodePayload(serializeLineForLink(line)));
     return url.toString();
   };
 
@@ -432,6 +519,7 @@
     mintOpenLink, revokeOpenLink, buildGuestLink,
     requestGuestJoin, getPending, admitPending, denyPending,
     buildSharedLink, buildOneTimeLink, buildCallLink,
+    serializeLineForLink, encodePayload, decodePayload, hydrateFromPayload,
     pingInCall, callIsLive, liveParticipantIds, clearLivePresence,
     onPresence, emitPresence,
     setSession, getSession, clearSession,

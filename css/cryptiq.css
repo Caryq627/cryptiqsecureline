@@ -26,6 +26,10 @@
   --r-tight: 2px;
   --r-soft:  3px;
   --r-card:  4px;
+  /* Asymmetric corners — shared by every card surface. The L-shaped
+     accent brackets on .card sit in the small (top-left / bottom-right)
+     corners; the curves swell out on the opposite corners. */
+  --r-asym:  4px 28px 4px 28px;
   --font-sans: 'DM Sans', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -230,7 +234,7 @@ button { font-family: inherit; }
   background: linear-gradient(180deg, var(--bg-raise) 0%, var(--bg) 100%);
   border: 1px solid rgba(255,255,255,0.06);
   border-top: 1px solid var(--accent-line);
-  border-radius: var(--r-card);
+  border-radius: var(--r-asym);
   padding: 40px 36px;
   width: 100%;
   max-width: 460px;
@@ -259,15 +263,13 @@ button { font-family: inherit; }
 .card.wide { max-width: 620px; }
 .card.slim { max-width: 380px; }
 
-/* Landing-page hero card: asymmetric corner radii for a more distinctive
-   silhouette. Top-right and bottom-left swell out, while the L-shaped
-   accent brackets stay tucked into the small (top-left / bottom-right)
-   corners — the curves and the brackets play off each other. */
-.card.is-hero {
-  border-radius: 4px 28px 4px 28px;
-}
+/* Mobile: keep the asymmetric silhouette but with slightly tighter curves. */
 @media (max-width: 640px) {
-  .card.is-hero { border-radius: 3px 22px 3px 22px; }
+  .card,
+  .face-gate-card,
+  .hold-card,
+  .capture-card,
+  .share-card { border-radius: 3px 22px 3px 22px; }
 }
 
 .card-eyebrow {
@@ -1229,7 +1231,7 @@ input, textarea, select {
 .face-gate-card {
   background: var(--bg-raise);
   border: 1px solid var(--accent-line);
-  border-radius: var(--r-card);
+  border-radius: var(--r-asym);
   padding: 28px 24px 22px;
   width: 100%;
   max-width: 420px;
@@ -1307,7 +1309,7 @@ input, textarea, select {
 .hold-card {
   background: var(--bg-raise);
   border: 1px solid var(--accent-line);
-  border-radius: var(--r-card);
+  border-radius: var(--r-asym);
   padding: 32px 28px 28px;
   width: 100%;
   max-width: 420px;
@@ -1938,7 +1940,7 @@ body.theme-light .banner {
 .share-card {
   background: var(--bg-raise);
   border: 1px solid var(--accent-line);
-  border-radius: var(--r-card);
+  border-radius: var(--r-asym);
   padding: 26px 24px 22px;
   width: 100%;
   max-width: 460px;

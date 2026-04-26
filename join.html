@@ -112,6 +112,7 @@
     const lineId = params.get('line');
     const sharedT = params.get('t');
     const oneTimeT = params.get('o');
+    const payload = params.get('d');
 
     const el = {
       title: document.getElementById('gate-title'),
@@ -142,9 +143,14 @@
       throw new Error('no line');
     }
 
-    const line = cqLine.getLine(lineId);
+    // If we don't have this line locally (cross-device share), hydrate it
+    // from the URL-embedded snapshot so the rest of the flow just works.
+    let line = cqLine.getLine(lineId);
+    if (!line && payload) {
+      line = cqLine.hydrateFromPayload(payload);
+    }
     if (!line) {
-      renderError('Line not found', 'This secure line may have expired, been deleted, or was created on another device in this demo.');
+      renderError('Line not found', 'This secure line may have expired, been deleted, or the link is missing required data.');
       throw new Error('no line');
     }
 
@@ -264,6 +270,14 @@
         gatePass = { frame: r.frame, participantId: pid };
         clearInterval(tickTimer); tickTimer = null;
         const pass = line.participants.find(x => x.id === pid);
+        // Cross-device entry: the line was hydrated from the URL without
+        // photos. Persist the gate-passing frame as this participant's
+        // reference photo so active-monitoring has something to match
+        // against during the call.
+        if (pass && !pass.photo && r.frame) {
+          pass.photo = r.frame;
+          cqLine.saveLine(line);
+        }
         const firstName = pass ? pass.name.split(' ')[0] : null;
         el.status.textContent = firstName ? `WELCOME, ${pass.name.toUpperCase()}` : 'VERIFIED · READY TO JOIN';
         el.title.innerHTML = firstName ? `Welcome, <span class="accent">${escapeHtml(firstName)}</span>` : el.title.innerHTML;
@@ -276,12 +290,19 @@
 
     // In sim mode, match2D always passes so we pick the first participant;
     // in real mode this iterates each enrollment and picks the best score.
+    // Cross-device fallback: when the line was hydrated from a URL payload
+    // (no photos available locally), the URL token already authenticated
+    // the link — fall back to picking the first participant rather than
+    // rejecting with "FACE NOT IN ROSTER".
     const resolveIdentityShared = async (frame) => {
       if (!line.participants.length) return null;
       if (cqFacetec.simMode) return line.participants[0].id;
+      const withPhotos = line.participants.filter(p => p.photo);
+      if (!withPhotos.length) {
+        return line.participants[0].id;
+      }
       let best = null, bestLvl = -1;
-      for (const p of line.participants) {
-        if (!p.photo) continue;
+      for (const p of withPhotos) {
         const ref = await cqFacetec.captureFromDataUrl(p.photo);
         const m = await cqFacetec.match2D(frame, ref);
         if (m.success && typeof m.matchLevel === 'number' && m.matchLevel > bestLvl) {

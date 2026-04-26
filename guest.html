@@ -157,7 +157,10 @@
     const params   = new URLSearchParams(location.search);
     const lineId   = params.get('line');
     const openTok  = params.get('g');
-    const line     = lineId ? cqLine.getLine(lineId) : null;
+    const payload  = params.get('d');
+    // Hydrate from URL-embedded snapshot if the line isn't on this device.
+    let line = lineId ? cqLine.getLine(lineId) : null;
+    if (!line && payload) line = cqLine.hydrateFromPayload(payload);
 
     const $ = (id) => document.getElementById(id);
     const cards = {
