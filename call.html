@@ -1208,7 +1208,7 @@
       const reader = new FileReader();
       reader.onload = async () => {
         // Downscale before validation/storage.
-        const resized = await cqFacetec.captureFromDataUrl(reader.result, 480);
+        const resized = await cqFacetec.captureFromDataUrl(reader.result, 720);
         otImg.src = resized;
         otImg.classList.add('is-loaded');
         otHolder.style.display = 'none';

@@ -254,10 +254,13 @@
       alert('That doesn’t look like a secure line link.');
     });
 
-    // "Try a sample call" → step 1: capture the user's actual face via
-    // cqFaceGate, then seed a demo line that uses that frame as the host's
-    // identity. Real face = real identity matching during the call, so the
-    // simulate buttons actually demonstrate the live verification system.
+    // "Try a sample call" → two-step:
+    //   1) cqEnroll: capture or upload a reference face
+    //   2) cqFaceGate: prove the live face matches that reference
+    //
+    // Step 2 cancel loops back into Step 1 ("Use a different photo") so a
+    // bad reference photo (poor lighting, glare, etc.) doesn't dead-end
+    // the demo — the user can re-enroll and try again.
     document.getElementById('try-demo').addEventListener('click', (e) => {
       e.preventDefault();
 
@@ -270,39 +273,42 @@
         `</svg>`
       );
 
-      // Step 1: enrollment — same UX as setup.html. Tabs (live capture
-      // with manual shutter / upload with pan-zoom). Validation rejects
-      // sunglasses, masks, small or low-quality faces before continuing.
-      cqEnroll.show({
-        headline: 'Capture your face',
-        sub: 'Step 1 of 2 — take a photo or upload one. Eyes + mouth must be visible.',
-        cancelText: 'Cancel demo',
-        onCaptured: (refPhoto) => {
-          // Step 2: verify a live capture matches the enrolled reference.
-          cqFaceGate.verify({
-            refPhoto,
-            headline: 'Now show it matches',
-            sub: 'Step 2 of 2 — your live face must match the reference.',
-            cancelText: 'Cancel demo',
-            onVerified: () => {
-              // Step 3: drop into the call. Active monitoring is OFF by
-              // default; the in-call hamburger menu has a toggle to turn
-              // it on so users can demo continuous matching.
-              const line = cqLine.createLine('Sample call · demo', { activeMonitoring: false });
-              const host = cqLine.addParticipant(line.id, { name: 'You',  photo: refPhoto });
-              cqLine.setHost(line.id, host.id);
-              cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svgPlaceholder('JC','#3d4a6b') });
-              cqLine.addParticipant(line.id, { name: 'Marcus Reid',     photo: svgPlaceholder('MR','#6b2f4a') });
-              cqLine.addParticipant(line.id, { name: 'Priya Natarajan', photo: svgPlaceholder('PN','#4a6b2f') });
-              cqLine.setSession({ lineId: line.id, participantId: host.id, gatePassedAt: Date.now() });
-              const callUrl = `call.html?line=${encodeURIComponent(line.id)}&me=${encodeURIComponent(host.id)}&demo=1`;
-              cqConnecting.show({ onDone: () => { location.href = callUrl; } });
-            },
-            onCancel: () => { /* user dropped at step 2 */ },
-          });
-        },
-        onCancel: () => { /* user dropped at step 1 */ },
-      });
+      const enterDemoCall = (refPhoto) => {
+        const line = cqLine.createLine('Sample call · demo', { activeMonitoring: false });
+        const host = cqLine.addParticipant(line.id, { name: 'You',  photo: refPhoto });
+        cqLine.setHost(line.id, host.id);
+        cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svgPlaceholder('JC','#3d4a6b') });
+        cqLine.addParticipant(line.id, { name: 'Marcus Reid',     photo: svgPlaceholder('MR','#6b2f4a') });
+        cqLine.addParticipant(line.id, { name: 'Priya Natarajan', photo: svgPlaceholder('PN','#4a6b2f') });
+        cqLine.setSession({ lineId: line.id, participantId: host.id, gatePassedAt: Date.now() });
+        const callUrl = `call.html?line=${encodeURIComponent(line.id)}&me=${encodeURIComponent(host.id)}&demo=1`;
+        cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+      };
+
+      const verifyAgainst = (refPhoto) => {
+        cqFaceGate.verify({
+          refPhoto,
+          headline: 'Now show it matches',
+          sub: 'Step 2 of 2 — your live face must match the reference. Try better lighting or a new photo if it doesn\'t match.',
+          cancelText: 'Use a different photo',
+          onVerified: () => enterDemoCall(refPhoto),
+          // Cancel from step 2 = "I want a different reference". Loop back
+          // to enrollment so the user can capture or upload a new one.
+          onCancel: () => runEnrollment(),
+        });
+      };
+
+      const runEnrollment = () => {
+        cqEnroll.show({
+          headline: 'Capture your face',
+          sub: 'Step 1 of 2 — take a photo or upload one. Eyes + mouth must be visible.',
+          cancelText: 'Cancel demo',
+          onCaptured: (refPhoto) => verifyAgainst(refPhoto),
+          onCancel: () => { /* user fully cancelled */ },
+        });
+      };
+
+      runEnrollment();
     });
   </script>
 </body>

@@ -162,7 +162,7 @@
         vf.className = 'viewfinder is-verifying';
         const reader = new FileReader();
         reader.onload = async () => {
-          const resized = await cqFacetec.captureFromDataUrl(reader.result, 480);
+          const resized = await cqFacetec.captureFromDataUrl(reader.result, 720);
           const verdict = await cqFacetec.verifyEnrollmentPhoto(resized);
           if (!verdict.ok) {
             const msg = ({
@@ -251,7 +251,7 @@
           vf.className = 'viewfinder is-denied';
           if (timer) { clearInterval(timer); timer = null; }
         } else if (String(r.reason || '').startsWith('no-match') && !inGrace) {
-          statusEl.textContent = 'FACE DOES NOT MATCH';
+          statusEl.textContent = 'NO MATCH — TRY BETTER LIGHTING OR A NEW PHOTO';
           statusEl.className = 'viewfinder-status is-denied';
           vf.className = 'viewfinder is-denied';
         } else {

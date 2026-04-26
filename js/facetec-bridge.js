@@ -43,6 +43,12 @@
   // rooms from killing face detection without overcooking a well-lit image.
   const IMG_FILTER = 'brightness(1.12) contrast(1.08)';
 
+  // JPEG quality for ALL captures. 0.95 is near-lossless — minimizes
+  // compression artifacts that previously degraded server-side feature
+  // extraction. Slightly larger payload but still well within reasonable
+  // network limits.
+  const JPEG_Q = 0.95;
+
   const captureFrame = (video, maxSize = 480) => {
     if (!video || !video.videoWidth) return null;
     const w = video.videoWidth, h = video.videoHeight;
@@ -52,17 +58,12 @@
     canvas.width = cw; canvas.height = ch;
     const ctx = canvas.getContext('2d');
     try { ctx.filter = IMG_FILTER; } catch {}
-    // un-mirror: browsers apply CSS mirror but raw video pixels aren't flipped,
-    // match preview to what the user sees
     ctx.translate(cw, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, cw, ch);
-    return canvas.toDataURL('image/jpeg', 0.82);
+    return canvas.toDataURL('image/jpeg', JPEG_Q);
   };
 
-  // Capture the full rectangular camera frame — no center-cropping at all.
-  // Lets FaceTec's face detector scan the whole viewport; useful when the
-  // user is sitting well back from the camera.
   const captureFullFrame = (video, maxSize = 640) => {
     if (!video || !video.videoWidth) return null;
     const w = video.videoWidth, h = video.videoHeight;
@@ -75,7 +76,7 @@
     ctx.translate(cw, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, cw, ch);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return canvas.toDataURL('image/jpeg', JPEG_Q);
   };
 
   // Center-crop at a specific zoom level so users at different distances
@@ -103,7 +104,7 @@
     ctx.translate(outSize, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, cropSide, cropSide, 0, 0, outSize, outSize);
-    return canvas.toDataURL('image/jpeg', 0.82);
+    return canvas.toDataURL('image/jpeg', JPEG_Q);
   };
 
   // Best-effort: use FaceDetector's bounding box to center + zoom onto the
@@ -142,7 +143,7 @@
     ctx.translate(out, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, out, out);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return canvas.toDataURL('image/jpeg', JPEG_Q);
   };
 
   const captureFromDataUrl = async (dataUrl, maxSize = 480) => {
@@ -155,7 +156,7 @@
     const canvas = document.createElement('canvas');
     canvas.width = cw; canvas.height = ch;
     canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return canvas.toDataURL('image/jpeg', JPEG_Q);
   };
 
   // ---------- native FaceDetector wrapper ----------
@@ -572,14 +573,13 @@
           (typeof s1 === 'number' && s1 !== 0)) {
         return { ok: false, reason: 'no-face-detected', source: 'facetec', raw: data };
       }
-      // Self-vs-self match should yield matchLevel ~9 for a clean face.
-      // Lower scores mean feature extraction was inconsistent — typically
-      // sunglasses, masks, blur, harsh angle, or other obstructions even
-      // when image*Status came back 0. Use this as a quality floor.
-      const SELF_QUALITY_FLOOR = 8;
-      if (typeof data.matchLevel === 'number' && data.matchLevel < SELF_QUALITY_FLOOR) {
-        return { ok: false, reason: 'low-quality', matchLevel: data.matchLevel, source: 'facetec', raw: data };
-      }
+      // We previously enforced a "self-vs-self matchLevel >= 8" floor here
+      // to catch sunglasses/masks that slipped past image*Status checks.
+      // In practice the JPEG-roundtrip pipeline produces enough variance
+      // that legitimate photos land at 6-7 too, so the floor was rejecting
+      // good photos. Trust image*Status + the (best-effort) FaceDetector
+      // landmark check; let the actual identity-match step at gate time
+      // do the real verification.
       return { ok: true, matchLevel: data.matchLevel, source: 'facetec', raw: data };
     } catch (e) {
       return { ok: false, reason: 'network-error', error: String(e) };

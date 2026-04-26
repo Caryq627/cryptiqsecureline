@@ -233,9 +233,9 @@
       camCapture.disabled = true;
       setStatus(camStatus, 'CHECKING PHOTO…', 'is-verifying');
       setVfClass(camVf, 'is-verifying');
-      // captureAroundFace produces a face-centered crop using the browser
-      // FaceDetector bbox; falls back to full frame if unavailable.
-      const frame = await root.cqFacetec.captureAroundFace(camVideo, 480);
+      // 720px output for enrollment — preserves enough detail for reliable
+      // server-side feature extraction (480 was visibly degrading quality).
+      const frame = await root.cqFacetec.captureAroundFace(camVideo, 720);
       const verdict = await root.cqFacetec.verifyEnrollmentPhoto(frame);
       busy = false;
       if (!verdict.ok) {
@@ -282,7 +282,7 @@
       editor.tx = Math.max(-maxTx, Math.min(maxTx, editor.tx));
       editor.ty = Math.max(-maxTy, Math.min(maxTy, editor.ty));
     };
-    const renderEditorPng = (out = 480) => {
+    const renderEditorPng = (out = 720) => {
       const c = document.createElement('canvas');
       c.width = out; c.height = out;
       const ctx = c.getContext('2d');
@@ -292,7 +292,9 @@
       const cx = editor.natW / 2 - editor.tx / t;
       const cy = editor.natH / 2 - editor.ty / t;
       ctx.drawImage(upImg, cx - sw / 2, cy - sh / 2, sw, sh, 0, 0, out, out);
-      return c.toDataURL('image/jpeg', 0.86);
+      // 0.95 quality (near-lossless) — server-side feature extraction
+      // works much better when the input isn't compression-degraded.
+      return c.toDataURL('image/jpeg', 0.95);
     };
 
     const resetUpload = () => {
@@ -364,7 +366,9 @@
           applyXf();
           scheduleRevalidate();
         };
-        upImg.src = await root.cqFacetec.captureFromDataUrl(reader.result, 720);
+        // Load at 1024 max to preserve detail for the editor; the cropped
+        // output (720px) is what the server actually sees.
+        upImg.src = await root.cqFacetec.captureFromDataUrl(reader.result, 1024);
         setStatus(upStatus, 'LOADING PHOTO…', 'is-verifying');
         setVfClass(upFrame, 'is-verifying');
       };

@@ -538,7 +538,7 @@
       editor.ty = Math.max(-maxTy, Math.min(maxTy, editor.ty));
     };
 
-    const renderEditorToDataUrl = (outSize = 480) => {
+    const renderEditorToDataUrl = (outSize = 720) => {
       const canvas = document.createElement('canvas');
       canvas.width = outSize;
       canvas.height = outSize;
@@ -552,7 +552,7 @@
       const sx = cx - sw / 2;
       const sy = cy - sh / 2;
       ctx.drawImage(cap.uploadImg, sx, sy, sw, sh, 0, 0, outSize, outSize);
-      return canvas.toDataURL('image/jpeg', 0.86);
+      return canvas.toDataURL('image/jpeg', 0.95);
     };
 
     // Multi-pointer pan + pinch-zoom. Two pointers on the preview = pinch
@@ -742,7 +742,7 @@
       capFrame = null;
       cap.save.disabled = true;
 
-      const cropped = renderEditorToDataUrl(480);
+      const cropped = renderEditorToDataUrl(720);
       const verdict = await cqFacetec.verifyEnrollmentPhoto(cropped);
       if (gen !== editorRevalidateGen) return; // a newer adjustment superseded us
       if (!verdict.ok) {
