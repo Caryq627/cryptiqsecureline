@@ -302,7 +302,7 @@
             }
             return;
           }
-          cap.status.textContent = 'VERIFYING LIVENESS…';
+          cap.status.textContent = 'VERIFYING IDENTITY…';
           cap.vf.className = 'viewfinder is-verifying';
           const r = await cqFacetec.gate(cap.video, null);
           if (r.ok) {

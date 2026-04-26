@@ -808,6 +808,21 @@ input, textarea, select {
 }
 .pill-select button:hover:not(.is-on) { color: var(--fg); }
 
+/* Inline label + pill-select row used by share-link expiry choosers. */
+.exp-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.exp-row .exp-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
 .toggle {
   display: inline-flex;
   align-items: center;
@@ -2089,6 +2104,50 @@ body.theme-light .banner {
 }
 body.theme-light .share-card { background: var(--bg); }
 body.theme-light .share-opt { background: rgba(0,0,0,0.02); }
+
+/* Participant action sheet (reuses .share-sheet / .share-card layout). */
+.participant-action-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.participant-action-header .avatar {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: var(--bg-soft) center / cover no-repeat;
+  border: 1px solid var(--accent-line);
+  flex-shrink: 0;
+}
+.participant-action-header .pa-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+.participant-action-header .pa-role {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.share-opt.is-danger:hover {
+  border-color: rgba(255,90,95,0.45);
+  background: rgba(255,90,95,0.10);
+}
+.share-opt.is-danger .share-opt-icon {
+  background: rgba(255,90,95,0.14);
+  color: var(--danger);
+}
+.share-opt.is-danger .share-opt-title { color: var(--danger); }
+
+/* Tile interaction affordance: host sees a faint cursor + glow on hover. */
+.tile-grid.is-host .tile:not(.is-self) {
+  cursor: pointer;
+}
+.tile-grid.is-host .tile:not(.is-self):hover {
+  border-color: var(--accent-line);
+}
 
 /* ============================================================
    Self-preview open/hide toggle

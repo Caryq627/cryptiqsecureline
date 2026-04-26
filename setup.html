@@ -30,6 +30,98 @@
       max-width: 420px;
       box-shadow: var(--glow-strong);
     }
+    /* Upload editor: circular frame, draggable image inside, zoom slider. */
+    .upload-editor {
+      position: relative;
+      background: var(--bg-deep);
+      touch-action: none;
+      cursor: grab;
+      user-select: none;
+    }
+    .upload-editor:active { cursor: grabbing; }
+    .upload-img {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(1);
+      transform-origin: center;
+      width: auto; height: auto;
+      max-width: none; max-height: none;
+      pointer-events: none;
+      -webkit-user-drag: none;
+      user-select: none;
+      display: none;
+    }
+    .upload-img.is-loaded { display: block; }
+    .upload-placeholder {
+      position: absolute; inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--fg-dim);
+      padding: 24px;
+      text-align: center;
+      pointer-events: none;
+    }
+    .upload-placeholder-icon {
+      width: 36px; height: 36px;
+      margin-bottom: 10px;
+      color: var(--accent);
+    }
+    .upload-placeholder-text {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    .upload-zoom-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: -8px 0 14px;
+    }
+    .upload-zoom-row .zoom-label {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      letter-spacing: 0.18em;
+      color: var(--fg-muted);
+    }
+    .upload-zoom {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: var(--bg-deep);
+      border-radius: 2px;
+      outline: none;
+    }
+    .upload-zoom::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px rgba(46,196,182,0.55);
+      cursor: pointer;
+    }
+    .upload-zoom::-moz-range-thumb {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 0;
+      box-shadow: 0 0 6px rgba(46,196,182,0.55);
+      cursor: pointer;
+    }
+    .btn-link-action {
+      background: transparent;
+      border: 0;
+      padding: 4px 8px;
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-link-action:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -100,7 +192,7 @@
         <div id="mode-toggle-row" style="margin: -6px 0 18px; padding: 12px 14px; border: 1px solid var(--surface-border); border-radius: var(--r-soft); background: rgba(255,255,255,0.02);">
           <label class="toggle" style="width:100%; justify-content: space-between;">
             <span>
-              <span style="font-size:13px; font-weight:500; color: var(--fg);">Active liveness monitoring</span>
+              <span style="font-size:13px; font-weight:500; color: var(--fg);">Active identity monitoring</span>
               <span style="display:block; font-size:11px; color: var(--fg-muted); margin-top:2px;">
                 Continuously face-match every attendee during the call. Off = verify once at entry, then normal call.
               </span>
@@ -124,11 +216,21 @@
         </div>
 
         <div id="links-section" class="hidden" style="margin-top:28px;">
+          <div class="exp-row" style="margin-bottom:10px;">
+            <span class="exp-label">Shared link expires</span>
+            <div class="pill-select shared-exp-select" id="shared-exp-select">
+              <button data-exp="1h" type="button">1h</button>
+              <button data-exp="24h" type="button">24h</button>
+              <button data-exp="7d" type="button">7d</button>
+              <button data-exp="30d" type="button">30d</button>
+              <button data-exp="never" type="button" class="is-on">Never</button>
+            </div>
+          </div>
           <div class="link-box">
             <button class="btn btn-ghost btn-sm copy" id="copy-shared" type="button">
               <span data-icon="copy"></span> Copy
             </button>
-            <div class="label">Shared line link · non-expiring</div>
+            <div class="label" id="shared-label">SHARED LINE LINK · NON-EXPIRING</div>
             <div class="url" id="shared-link">—</div>
           </div>
 
@@ -147,7 +249,7 @@
           </button>
 
           <p style="font-size:12px; color:var(--fg-muted); margin:-4px 0 20px;">
-            Or send a one-time expiring link to a specific attendee from the row below.
+            Or send a one-time expiring link by tapping the link icon next to the specific attendee.
           </p>
         </div>
 
@@ -197,17 +299,25 @@
         <div class="viewfinder-status" id="cap-status">CENTER FACE IN RETICLE</div>
       </div>
 
-      <!-- Upload mode pane -->
+      <!-- Upload mode pane: file picker auto-opens on tab tap. After upload,
+           the photo enters a pan/zoom editor inside the circular frame so
+           the user can position their face precisely before validation. -->
       <div id="cap-upload-pane" class="hidden">
-        <div class="viewfinder" id="cap-upload-preview" style="background: var(--bg-deep); display: flex; align-items: center; justify-content: center;">
-          <div id="cap-upload-placeholder" style="text-align: center; color: var(--fg-dim); padding: 24px;">
-            <div style="width:36px; height:36px; margin:0 auto 10px; color:var(--accent);" data-icon="upload"></div>
-            <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.2em; text-transform:uppercase;">Drop or tap to upload</div>
+        <div class="viewfinder upload-editor" id="cap-upload-preview">
+          <div id="cap-upload-placeholder" class="upload-placeholder">
+            <div class="upload-placeholder-icon" data-icon="upload"></div>
+            <div class="upload-placeholder-text">Drop or tap to upload</div>
           </div>
-          <img id="cap-upload-img" alt="" style="display:none; width:100%; height:100%; object-fit: cover;" />
+          <img id="cap-upload-img" alt="" class="upload-img" draggable="false" />
         </div>
         <input id="cap-file" type="file" accept="image/*" style="display:none" />
-        <div class="viewfinder-status" id="cap-upload-status" style="cursor:pointer;">TAP TO UPLOAD</div>
+        <div class="viewfinder-status" id="cap-upload-status">CHOOSE A PHOTO</div>
+        <!-- Zoom slider — only visible once a photo is loaded. -->
+        <div class="upload-zoom-row" id="cap-upload-zoom-row" style="display:none;">
+          <span class="zoom-label">ZOOM</span>
+          <input id="cap-upload-zoom" class="upload-zoom" type="range" min="1" max="3" step="0.02" value="1" />
+          <button class="btn-link-action" id="cap-upload-redo" type="button">Choose different</button>
+        </div>
       </div>
 
       <div class="field">
@@ -305,7 +415,7 @@
         el.peopleSection.classList.remove('hidden');
         el.linksSection.classList.remove('hidden');
         el.addBtn.classList.add('hidden');
-        el.sharedLink.textContent = cqLine.buildSharedLink(line);
+        refreshSharedLink();
         renderPeople(true);
         el.nextBtn.innerHTML = '<span data-icon="phone"></span> Enter the line';
         cqIconsHydrate(el.nextBtn);
@@ -525,7 +635,89 @@
       uploadPlaceholder: $('cap-upload-placeholder'),
       uploadStatus: $('cap-upload-status'),
       uploadInput: $('cap-file'),
+      uploadZoom: $('cap-upload-zoom'),
+      uploadZoomRow: $('cap-upload-zoom-row'),
+      uploadRedo: $('cap-upload-redo'),
     };
+
+    // ---- Upload editor state (pan + zoom inside the circular frame) ----
+    const editor = {
+      natW: 0, natH: 0,   // image natural dims
+      baseScale: 1,        // multiplier to make image cover the circle
+      userScale: 1,        // user-driven zoom (1..3)
+      tx: 0, ty: 0,        // translation in displayed pixels
+      frameSize: 220,      // matches viewfinder width in capture overlay (220px in setup overlay due to capture-card width). Recomputed on load.
+    };
+
+    const applyEditorTransform = () => {
+      const total = editor.baseScale * editor.userScale;
+      cap.uploadImg.style.transform =
+        `translate(-50%, -50%) translate(${editor.tx}px, ${editor.ty}px) scale(${total})`;
+    };
+
+    const clampEditorTranslation = () => {
+      const total = editor.baseScale * editor.userScale;
+      const half = editor.frameSize / 2;
+      const halfDispW = (editor.natW * total) / 2;
+      const halfDispH = (editor.natH * total) / 2;
+      const maxTx = Math.max(0, halfDispW - half);
+      const maxTy = Math.max(0, halfDispH - half);
+      editor.tx = Math.max(-maxTx, Math.min(maxTx, editor.tx));
+      editor.ty = Math.max(-maxTy, Math.min(maxTy, editor.ty));
+    };
+
+    const renderEditorToDataUrl = (outSize = 480) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = outSize;
+      canvas.height = outSize;
+      const ctx = canvas.getContext('2d');
+      const total = editor.baseScale * editor.userScale;
+      // Visible window mapped to source-image coordinates:
+      const sw = editor.frameSize / total;
+      const sh = editor.frameSize / total;
+      const cx = editor.natW / 2 - editor.tx / total;
+      const cy = editor.natH / 2 - editor.ty / total;
+      const sx = cx - sw / 2;
+      const sy = cy - sh / 2;
+      ctx.drawImage(cap.uploadImg, sx, sy, sw, sh, 0, 0, outSize, outSize);
+      return canvas.toDataURL('image/jpeg', 0.86);
+    };
+
+    // Drag-to-pan
+    let dragStartX = 0, dragStartY = 0, dragging = false;
+    cap.uploadPreview.addEventListener('pointerdown', (e) => {
+      if (!cap.uploadImg.classList.contains('is-loaded')) return;
+      dragging = true;
+      dragStartX = e.clientX - editor.tx;
+      dragStartY = e.clientY - editor.ty;
+      try { cap.uploadPreview.setPointerCapture(e.pointerId); } catch {}
+    });
+    cap.uploadPreview.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      editor.tx = e.clientX - dragStartX;
+      editor.ty = e.clientY - dragStartY;
+      clampEditorTranslation();
+      applyEditorTransform();
+    });
+    const endDrag = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      try { cap.uploadPreview.releasePointerCapture(e.pointerId); } catch {}
+    };
+    cap.uploadPreview.addEventListener('pointerup', endDrag);
+    cap.uploadPreview.addEventListener('pointercancel', endDrag);
+    cap.uploadPreview.addEventListener('pointerleave', endDrag);
+
+    // Zoom slider
+    cap.uploadZoom.addEventListener('input', (e) => {
+      editor.userScale = parseFloat(e.target.value);
+      clampEditorTranslation();
+      applyEditorTransform();
+      // Re-validate after a short debounce so the user can keep adjusting.
+      scheduleEditorRevalidate();
+    });
+
+    cap.uploadRedo.addEventListener('click', () => cap.uploadInput.click());
 
     let capStream = null;
     let capFrame = null;
@@ -542,6 +734,7 @@
     };
 
     const setMode = (mode) => {
+      const wasMode = capMode;
       capMode = mode;
       capFrame = null;
       cap.save.disabled = true;
@@ -556,6 +749,12 @@
         cap.uploadPane.classList.remove('hidden');
         stopCameraMode();
         resetUploadPreview();
+        // Auto-open file picker when the user enters upload mode (either by
+        // tapping the Upload tab or on initial overlay open). One small
+        // delay so the pane has a chance to lay out.
+        if (wasMode !== 'upload') {
+          setTimeout(() => { try { cap.uploadInput.click(); } catch {} }, 80);
+        }
       }
     };
 
@@ -582,12 +781,58 @@
 
     const resetUploadPreview = () => {
       cap.uploadImg.src = '';
-      cap.uploadImg.style.display = 'none';
+      cap.uploadImg.classList.remove('is-loaded');
       cap.uploadPlaceholder.style.display = '';
-      cap.uploadStatus.textContent = 'TAP TO UPLOAD';
+      cap.uploadStatus.textContent = 'CHOOSE A PHOTO';
       cap.uploadStatus.className = 'viewfinder-status';
-      cap.uploadPreview.className = 'viewfinder';
-      cap.uploadPreview.style.background = 'var(--bg-deep)';
+      cap.uploadPreview.className = 'viewfinder upload-editor';
+      cap.uploadZoomRow.style.display = 'none';
+      cap.uploadZoom.value = 1;
+      editor.userScale = 1;
+      editor.tx = 0;
+      editor.ty = 0;
+    };
+
+    // Debounced re-validation: every time the user drags or zooms, we
+    // wait briefly then re-render the cropped output and re-check it.
+    let editorRevalidateTimer = null;
+    let editorRevalidateGen = 0;
+    const scheduleEditorRevalidate = () => {
+      const gen = ++editorRevalidateGen;
+      if (editorRevalidateTimer) clearTimeout(editorRevalidateTimer);
+      editorRevalidateTimer = setTimeout(() => validateEditor(gen), 350);
+    };
+
+    const validateEditor = async (gen) => {
+      if (!cap.uploadImg.classList.contains('is-loaded')) return;
+      cap.uploadStatus.textContent = 'CHECKING PHOTO…';
+      cap.uploadStatus.className = 'viewfinder-status is-verifying';
+      cap.uploadPreview.classList.add('is-verifying');
+      cap.uploadPreview.classList.remove('is-verified', 'is-denied');
+      capFrame = null;
+      cap.save.disabled = true;
+
+      const cropped = renderEditorToDataUrl(480);
+      const verdict = await cqFacetec.verifyEnrollmentPhoto(cropped);
+      if (gen !== editorRevalidateGen) return; // a newer adjustment superseded us
+      if (!verdict.ok) {
+        const msg = verdict.reason === 'multiple-faces'
+          ? 'TOO MANY FACES — REPOSITION'
+          : verdict.reason === 'no-face-detected'
+          ? 'NO CLEAR FACE — DRAG / ZOOM TO CENTER'
+          : 'PHOTO REJECTED — TRY ANOTHER';
+        cap.uploadStatus.textContent = msg;
+        cap.uploadStatus.className = 'viewfinder-status is-denied';
+        cap.uploadPreview.classList.remove('is-verifying');
+        cap.uploadPreview.classList.add('is-denied');
+        return;
+      }
+      capFrame = cropped;
+      cap.uploadStatus.textContent = 'PHOTO VERIFIED · ADD A NAME';
+      cap.uploadStatus.className = 'viewfinder-status is-verified';
+      cap.uploadPreview.classList.remove('is-verifying', 'is-denied');
+      cap.uploadPreview.classList.add('is-verified');
+      cap.save.disabled = !cap.name.value.trim();
     };
 
     const handleUpload = async (file) => {
@@ -598,44 +843,35 @@
         r.onerror = reject;
         r.readAsDataURL(file);
       });
-      // Downscale to <= 480px for storage size.
-      const resized = await cqFacetec.captureFromDataUrl(dataUrl, 480);
 
-      // Show preview immediately so the user sees what they uploaded, then
-      // validate. We block the Enroll button until validation succeeds.
-      cap.uploadImg.src = resized;
-      cap.uploadImg.style.display = '';
-      cap.uploadPlaceholder.style.display = 'none';
-      cap.uploadStatus.textContent = 'CHECKING PHOTO…';
+      // Load full-resolution image into an Image element so the editor can
+      // crop a sharp output at any zoom. Source dataURL stays as the img
+      // src for the actual rendering.
+      cap.uploadImg.onload = () => {
+        editor.natW = cap.uploadImg.naturalWidth;
+        editor.natH = cap.uploadImg.naturalHeight;
+        // The viewfinder is laid out at 220px wide inside .capture-card.
+        // Use offsetWidth so this stays correct if CSS changes later.
+        editor.frameSize = cap.uploadPreview.offsetWidth || 220;
+        editor.baseScale = Math.max(
+          editor.frameSize / editor.natW,
+          editor.frameSize / editor.natH
+        );
+        editor.userScale = 1;
+        editor.tx = 0;
+        editor.ty = 0;
+        cap.uploadImg.classList.add('is-loaded');
+        cap.uploadPlaceholder.style.display = 'none';
+        cap.uploadZoomRow.style.display = 'flex';
+        cap.uploadZoom.value = 1;
+        applyEditorTransform();
+        // Initial validation pass — user can then drag/zoom to refine.
+        scheduleEditorRevalidate();
+      };
+      cap.uploadImg.src = dataUrl;
+      cap.uploadStatus.textContent = 'LOADING PHOTO…';
       cap.uploadStatus.className = 'viewfinder-status is-verifying';
-      cap.uploadPreview.className = 'viewfinder is-verifying';
-      capFrame = null;
-      cap.save.disabled = true;
-
-      // Server-side enrollment validation: confirms the verification engine
-      // can extract face features from the photo. Without this a non-face
-      // image (or a face too blurry/small to encode) silently passes setup
-      // and breaks identity matching for that participant.
-      const verdict = await cqFacetec.verifyEnrollmentPhoto(resized);
-      if (!verdict.ok) {
-        const msg = verdict.reason === 'multiple-faces'
-          ? 'TOO MANY FACES IN PHOTO'
-          : verdict.reason === 'no-face-detected'
-          ? 'NO CLEAR FACE — TRY ANOTHER PHOTO'
-          : 'PHOTO REJECTED — TRY ANOTHER';
-        cap.uploadStatus.textContent = msg;
-        cap.uploadStatus.className = 'viewfinder-status is-denied';
-        cap.uploadPreview.className = 'viewfinder is-denied';
-        capFrame = null;
-        cap.save.disabled = true;
-        return;
-      }
-
-      capFrame = resized;
-      cap.uploadStatus.textContent = 'PHOTO VERIFIED · ADD A NAME';
-      cap.uploadStatus.className = 'viewfinder-status is-verified';
-      cap.uploadPreview.className = 'viewfinder is-verified';
-      cap.save.disabled = !cap.name.value.trim();
+      cap.uploadPreview.classList.add('is-verifying');
     };
 
     const closeCapture = () => {
@@ -663,7 +899,7 @@
             cap.viewfinder.className = 'viewfinder is-denied';
             return;
           }
-          cap.status.textContent = 'VERIFYING LIVENESS…';
+          cap.status.textContent = 'VERIFYING IDENTITY…';
           cap.status.className = 'viewfinder-status is-verifying';
           cap.viewfinder.className = 'viewfinder is-verifying';
           const r = await cqFacetec.gate(cap.video, null);
@@ -692,9 +928,9 @@
       b.addEventListener('click', () => setMode(b.dataset.mode));
     });
 
-    // Upload pane — click to open file picker + drag/drop
+    // Status text re-opens picker; the preview circle is reserved for
+    // drag/zoom interactions and no longer triggers the picker on click.
     cap.uploadStatus.addEventListener('click', () => cap.uploadInput.click());
-    cap.uploadPreview.addEventListener('click', () => cap.uploadInput.click());
     cap.uploadInput.addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
       if (f) handleUpload(f);
@@ -702,11 +938,7 @@
     ['dragenter','dragover'].forEach(ev => {
       cap.uploadPreview.addEventListener(ev, (e) => {
         e.preventDefault(); e.stopPropagation();
-        cap.uploadPreview.className = 'viewfinder is-verifying';
       });
-    });
-    cap.uploadPreview.addEventListener('dragleave', () => {
-      if (!capFrame) cap.uploadPreview.className = 'viewfinder';
     });
     cap.uploadPreview.addEventListener('drop', (e) => {
       e.preventDefault(); e.stopPropagation();
@@ -791,6 +1023,29 @@
     });
 
     el.addBtn.addEventListener('click', openCapture);
+
+    // Shared link expiry pills. Default = Never (matches initial line state).
+    const sharedExpRow = document.getElementById('shared-exp-select');
+    const sharedLabelEl = document.getElementById('shared-label');
+    const refreshSharedLink = () => {
+      el.sharedLink.textContent = cqLine.buildSharedLink(line);
+      // Compute current label
+      let lbl = 'SHARED LINE LINK · NON-EXPIRING';
+      if (line.sharedExpiresAt) {
+        lbl = `SHARED LINE LINK · ${cqLine.formatExpiresIn(line.sharedExpiresAt).toUpperCase()}`;
+      }
+      if (sharedLabelEl) sharedLabelEl.textContent = lbl;
+    };
+    sharedExpRow.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        sharedExpRow.querySelectorAll('button').forEach(b => b.classList.toggle('is-on', b === btn));
+        const ms = cqLine.DURATION_PRESETS[btn.dataset.exp];
+        cqLine.setSharedExpiry(line.id, ms);
+        line = cqLine.getLine(line.id);
+        refreshSharedLink();
+        toast(btn.dataset.exp === 'never' ? 'Shared link · never expires' : `Shared link expires in ${btn.dataset.exp}`);
+      });
+    });
 
     el.copyShared.addEventListener('click', async () => {
       await cqLine.copyToClipboard(el.sharedLink.textContent);

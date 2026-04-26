@@ -184,6 +184,11 @@
       }
       el.hint.innerHTML = `Reserved for <strong style="color:var(--accent);">${escapeHtml(targetParticipant.name)}</strong>`;
     } else if (sharedT && sharedT === line.sharedToken) {
+      // Shared link expiry. null = never expires.
+      if (line.sharedExpiresAt && Date.now() > line.sharedExpiresAt) {
+        renderError('Link expired', 'This shared link has passed its expiry window. Ask the host for a fresh one.');
+        throw new Error('shared expired');
+      }
       el.hint.innerHTML = `${line.participants.length} enrolled · match your face to enter`;
     } else {
       renderError('Link invalid', 'This link does not match the secure line.');
@@ -240,7 +245,7 @@
           }
           return;
         }
-        el.status.textContent = 'RUNNING 2D LIVENESS…';
+        el.status.textContent = 'VERIFYING IDENTITY…';
         const refPhoto = targetParticipant ? targetParticipant.photo : null;
         const r = await cqFacetec.gate(el.video, refPhoto);
         if (!r.ok) {
@@ -250,7 +255,7 @@
             el.status.className = 'viewfinder-status is-denied';
             return;
           }
-          el.status.textContent = 'LIVENESS PENDING…';
+          el.status.textContent = 'VERIFYING IDENTITY…';
           el.vf.className = 'viewfinder is-verifying';
           el.status.className = 'viewfinder-status is-verifying';
           return;

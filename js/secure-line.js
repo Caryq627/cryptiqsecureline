@@ -76,6 +76,17 @@
     return line;
   };
 
+  // Set the shared-link expiry. Pass null to clear (= never expires).
+  const setSharedExpiry = (lineId, expiresInMs) => {
+    const line = getLine(lineId);
+    if (!line) return null;
+    line.sharedExpiresAt = (expiresInMs === null || expiresInMs === undefined)
+      ? null
+      : Date.now() + expiresInMs;
+    saveLine(line);
+    return line;
+  };
+
   const addParticipant = (lineId, { name, photo, role }) => {
     const line = getLine(lineId);
     if (!line) throw new Error('Line not found');
@@ -285,6 +296,7 @@
     id: line.id,
     name: line.name,
     sharedToken: line.sharedToken,
+    sharedExpiresAt: line.sharedExpiresAt || null,
     openToken: line.openToken || null,
     activeMonitoring: !!line.activeMonitoring,
     createdBy: line.createdBy || null,
@@ -513,7 +525,7 @@
   // ---------- public api ----------
 
   root.cqLine = {
-    getLine, saveLine, deleteLine, createLine, setActiveMonitoring,
+    getLine, saveLine, deleteLine, createLine, setActiveMonitoring, setSharedExpiry,
     addParticipant, removeParticipant, setHost,
     mintOneTime, consumeOneTime, revokeOneTime, findParticipantByToken,
     mintOpenLink, revokeOpenLink, buildGuestLink,

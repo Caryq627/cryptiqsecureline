@@ -104,7 +104,18 @@
     <div class="share-card">
       <div class="card-eyebrow"><span class="dot"></span>SHARE LINK</div>
       <h2>Bring someone in</h2>
-      <p class="lead" id="share-lead">Pick a link type. We'll mint and copy it.</p>
+      <p class="lead" id="share-lead">Pick how long it stays valid, then choose a link type.</p>
+
+      <div class="exp-row" style="margin-bottom: 14px;">
+        <span class="exp-label">Expiry</span>
+        <div class="pill-select share-exp-select" id="share-exp-select">
+          <button data-exp="1h"   type="button">1h</button>
+          <button data-exp="24h"  type="button" class="is-on">24h</button>
+          <button data-exp="7d"   type="button">7d</button>
+          <button data-exp="30d"  type="button">30d</button>
+          <button data-exp="never" type="button">Never</button>
+        </div>
+      </div>
 
       <div class="share-options">
         <button class="share-opt" type="button" data-kind="shared">
@@ -140,6 +151,41 @@
 
       <div class="row-end" style="margin-top:18px;">
         <button class="btn btn-ghost" id="share-close" type="button">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Participant action sheet (host only). Tap any non-self tile to open.
+       Lets the host mute or remove the participant. Honor-based in this
+       demo — receiver applies the action on receipt of the presence msg. -->
+  <div class="share-sheet" id="participant-actions" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="share-card">
+      <div class="card-eyebrow"><span class="dot"></span>PARTICIPANT</div>
+      <div class="participant-action-header">
+        <div class="avatar" id="pa-avatar"></div>
+        <div>
+          <div class="pa-name" id="pa-name">—</div>
+          <div class="pa-role" id="pa-role">ATTENDEE</div>
+        </div>
+      </div>
+      <div class="share-options" style="margin-top:12px;">
+        <button class="share-opt" type="button" data-action="mute" id="pa-mute">
+          <span class="share-opt-icon" data-icon="micOff"></span>
+          <span class="share-opt-text">
+            <span class="share-opt-title" id="pa-mute-title">Mute mic</span>
+            <span class="share-opt-sub">Silence their outgoing audio</span>
+          </span>
+        </button>
+        <button class="share-opt is-danger" type="button" data-action="remove">
+          <span class="share-opt-icon" data-icon="logout"></span>
+          <span class="share-opt-text">
+            <span class="share-opt-title">Remove from call</span>
+            <span class="share-opt-sub">Drops them back to the home screen</span>
+          </span>
+        </button>
+      </div>
+      <div class="row-end" style="margin-top:14px;">
+        <button class="btn btn-ghost" type="button" id="pa-cancel">Cancel</button>
       </div>
     </div>
   </div>
@@ -260,14 +306,8 @@
     // at the door, so the call itself is "approved territory" and reads
     // calmer. Active-monitoring keeps the dark security-console aesthetic.
     // Re-applied after a microtask so this beats theme.js's stored-pref init.
-    if (!isActiveMonitoring) {
-      // theme.js runs init() on DOMContentLoaded and may remove theme-light
-      // based on the user's stored pref. Apply it once now AND again after
-      // init has had its turn so we win the race either way.
-      const applyEntryGatedLight = () => document.body.classList.add('theme-light');
-      applyEntryGatedLight();
-      document.addEventListener('DOMContentLoaded', applyEntryGatedLight);
-    }
+    // Theme is purely user-controlled (theme toggle in the header). Don't
+    // force light mode based on monitoring mode — let the user decide.
     const startedAt = Date.now();
     const clockEl = document.getElementById('line-clock');
     setInterval(() => {
@@ -567,6 +607,19 @@
 
     cqLine.onPresence((msg) => {
       if (!msg || msg.lineId !== line.id) return;
+      // Force-mic / kick are TARGETED at me — accept them even though they
+      // weren't broadcast by my own tab.
+      if (msg.type === 'force-mic' && msg.target === me.id) {
+        setMic(!!msg.muted);
+        banner(msg.muted ? 'Muted by host' : 'Host unmuted you');
+        return;
+      }
+      if (msg.type === 'kick' && msg.target === me.id) {
+        banner('Removed from call by host', 'danger');
+        // Brief delay so the user sees what happened, then bounce home.
+        setTimeout(() => leaveCall(), 1400);
+        return;
+      }
       if (msg.pid === me.id) return;
 
       if (msg.type === 'join') {
@@ -931,14 +984,29 @@
       banner('Link copied');
     });
 
+    // Track the currently-selected expiry pill for the share sheet.
+    const shareExp = { key: '24h' };
+    const shareExpSelect = document.getElementById('share-exp-select');
+    shareExpSelect.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        shareExp.key = btn.dataset.exp;
+        shareExpSelect.querySelectorAll('button').forEach(b => b.classList.toggle('is-on', b === btn));
+      });
+    });
+
+    const expLabel = (key) => key === 'never' ? 'NON-EXPIRING' : `EXPIRES IN ${key.toUpperCase()}`;
+
     shareSheet.querySelectorAll('.share-opt').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (btn.disabled) return;
         const kind = btn.dataset.kind;
-        const fresh = cqLine.getLine(line.id);
+        const expMs = cqLine.DURATION_PRESETS[shareExp.key];
         if (kind === 'shared') {
+          // Apply the chosen expiry to the line's shared-link metadata.
+          cqLine.setSharedExpiry(line.id, expMs);
+          const fresh = cqLine.getLine(line.id);
           const url = cqLine.buildSharedLink(fresh);
-          showShareResult(url, 'SHARED LINE LINK · NON-EXPIRING');
+          showShareResult(url, `SHARED LINE LINK · ${expLabel(shareExp.key)}`);
           return;
         }
         if (kind === 'open') {
@@ -955,12 +1023,12 @@
           // to a real id; the recipient will appear under this name.
           const guest = cqLine.addParticipant(line.id, { name, role: 'guest' });
           const token = cqLine.mintOneTime(line.id, guest.id, {
-            expiresInMs: cqLine.DURATION_PRESETS['24h'],
+            expiresInMs: expMs,
             singleUse: true,
           });
           const updated = cqLine.getLine(line.id);
           const url = cqLine.buildOneTimeLink(updated, token);
-          showShareResult(url, `ONE-TIME · 24H · FOR ${name.toUpperCase()}`);
+          showShareResult(url, `ONE-TIME · ${expLabel(shareExp.key)} · FOR ${name.toUpperCase()}`);
           // Make the new participant a tile so we know to expect them.
           if (!tilesById.has(guest.id)) buildTile(guest);
           updateRoster();
@@ -975,6 +1043,92 @@
         if (shareSheet.classList.contains('is-open')) closeShareSheet();
         else openShareSheet();
       }
+    });
+
+    // ---------- Tap participant → mute / remove (host only) ----------
+    //
+    // Honor-based for the static demo: host emits a presence msg, target
+    // obeys it (mutes their own mic, or runs leaveCall on remove). Real
+    // product would enforce server-side, but the UX flow is the same.
+
+    const paSheet     = document.getElementById('participant-actions');
+    const paAvatar    = document.getElementById('pa-avatar');
+    const paName      = document.getElementById('pa-name');
+    const paRole      = document.getElementById('pa-role');
+    const paMuteTitle = document.getElementById('pa-mute-title');
+    const paCancelBtn = document.getElementById('pa-cancel');
+    let paTargetPid = null;
+
+    if (isHost) grid.classList.add('is-host');
+
+    const openParticipantActions = (pid) => {
+      const p = line.participants.find(x => x.id === pid);
+      if (!p) return;
+      paTargetPid = pid;
+      paAvatar.style.backgroundImage = p.photo ? `url(${p.photo})` : '';
+      paName.textContent = p.name;
+      paRole.textContent = (p.id === line.createdBy) ? 'HOST' : (p.role || 'ATTENDEE').toUpperCase();
+      // Mute label adapts: if target's tile reads as currently muted, offer
+      // "Unmute" (still honor-based — the target chooses to obey).
+      const t = tilesById.get(pid);
+      paMuteTitle.textContent = (t && t.muted) ? 'Unmute mic' : 'Mute mic';
+      paSheet.classList.add('is-open');
+      paSheet.setAttribute('aria-hidden', 'false');
+    };
+    const closeParticipantActions = () => {
+      paSheet.classList.remove('is-open');
+      paSheet.setAttribute('aria-hidden', 'true');
+      paTargetPid = null;
+    };
+    paCancelBtn.addEventListener('click', closeParticipantActions);
+    paSheet.addEventListener('click', (e) => { if (e.target === paSheet) closeParticipantActions(); });
+
+    grid.addEventListener('click', (e) => {
+      if (!isHost) return;
+      const tile = e.target.closest('.tile');
+      if (!tile) return;
+      const pid = tile.dataset.pid;
+      if (!pid || pid === me.id) return;
+      openParticipantActions(pid);
+    });
+
+    paSheet.querySelectorAll('.share-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!paTargetPid) return;
+        const action = btn.dataset.action;
+        const target = paTargetPid;
+        const t = tilesById.get(target);
+        const targetMuted = !!(t && t.muted);
+        closeParticipantActions();
+        if (action === 'mute') {
+          // Toggle: if already muted, send an unmute request; else mute.
+          cqLine.emitPresence({
+            type: 'force-mic',
+            lineId: line.id,
+            by: me.id,
+            target,
+            muted: !targetMuted,
+            ts: Date.now(),
+          });
+          // Optimistically update host's view of the tile.
+          if (t) { t.muted = !targetMuted; applyVisual(target); }
+          banner(targetMuted ? 'Unmute requested' : 'Muted by host');
+        } else if (action === 'remove') {
+          cqLine.emitPresence({
+            type: 'kick',
+            lineId: line.id,
+            by: me.id,
+            target,
+            ts: Date.now(),
+          });
+          // Pull them out of the line + drop their tile locally.
+          cqLine.removeParticipant(line.id, target);
+          if (t) { t.el.remove(); tilesById.delete(target); }
+          updateRoster();
+          const p = line.participants.find(x => x.id === target);
+          banner(`${p ? p.name.split(' ')[0] : 'Participant'} removed from call`, 'warn');
+        }
+      });
     });
 
     // ---------- Demo panel (only visible when ?demo=1) ----------

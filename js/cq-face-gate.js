@@ -118,7 +118,7 @@
             return;
           }
 
-          statusEl.textContent = 'VERIFYING LIVENESS…';
+          statusEl.textContent = 'VERIFYING IDENTITY…';
           const r = await cqFacetec.gate(video, refPhoto);
           if (r.ok) {
             statusEl.textContent = typeof r.matchLevel === 'number'
@@ -152,7 +152,7 @@
           } else {
             // Any other failure during grace stays neutral; after grace
             // just show verifying until the next tick resolves.
-            statusEl.textContent = 'VERIFYING LIVENESS…';
+            statusEl.textContent = 'VERIFYING IDENTITY…';
           }
         } finally { checking = false; }
       };
