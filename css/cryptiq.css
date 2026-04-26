@@ -462,7 +462,8 @@ button { font-family: inherit; }
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   background: var(--field-bg);
   border: 1px solid var(--surface-border);
@@ -470,12 +471,21 @@ button { font-family: inherit; }
   padding: 12px 14px;
   color: var(--fg);
   font-family: inherit;
-  font-size: 14px;
+  /* 16px keeps iOS Safari from zooming on focus. Don't drop below this on
+     any visible input or the layout shifts when the on-screen keyboard opens. */
+  font-size: 16px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+/* Belt-and-braces: any unstyled input/textarea/select on the page should
+   still be 16px+ on iOS to prevent the focus-zoom layout jump. */
+input, textarea, select {
+  font-size: 16px;
+}
+
 .field input:focus,
-.field textarea:focus {
+.field textarea:focus,
+.field select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -1143,7 +1153,9 @@ button { font-family: inherit; }
   border: 2px solid var(--accent-line);
   box-shadow: 0 0 24px rgba(0,0,0,0.5);
   z-index: 20;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  /* Fast border + box-shadow transitions, but width/height snap instantly so
+     show/hide feels responsive (no half-second collapse). */
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.12s ease;
 }
 .self-preview video {
   width: 100%; height: 100%;
@@ -1161,13 +1173,15 @@ button { font-family: inherit; }
   color: var(--accent);
   text-shadow: 0 0 6px rgba(0,0,0,0.9);
 }
-.self-preview.state-verified { border-color: var(--accent); box-shadow: 0 0 22px rgba(46,196,182,0.5); }
-.self-preview.state-away     { border-color: var(--warn);   box-shadow: 0 0 22px rgba(255,181,71,0.4); }
-.self-preview.state-intruder { border-color: var(--danger); box-shadow: 0 0 22px rgba(255,90,95,0.5); }
-.self-preview.state-held     { border-color: rgba(255,255,255,0.30); box-shadow: 0 0 18px rgba(0,0,0,0.45); }
-.self-preview.state-away .label     { color: var(--warn); }
-.self-preview.state-intruder .label { color: var(--danger); }
-.self-preview.state-held .label     { color: var(--fg-muted); }
+.self-preview.state-verified  { border-color: var(--accent); box-shadow: 0 0 22px rgba(46,196,182,0.5); }
+.self-preview.state-verifying { border-color: var(--warn);   box-shadow: 0 0 22px rgba(255,181,71,0.35); }
+.self-preview.state-away      { border-color: var(--warn);   box-shadow: 0 0 22px rgba(255,181,71,0.4); }
+.self-preview.state-intruder  { border-color: var(--danger); box-shadow: 0 0 22px rgba(255,90,95,0.5); }
+.self-preview.state-held      { border-color: rgba(255,255,255,0.30); box-shadow: 0 0 18px rgba(0,0,0,0.45); }
+.self-preview.state-verifying .label { color: var(--warn); }
+.self-preview.state-away .label      { color: var(--warn); }
+.self-preview.state-intruder .label  { color: var(--danger); }
+.self-preview.state-held .label      { color: var(--fg-muted); }
 
 /* ============================================================
    Face gate overlay — verifies 2D liveness + 1:1 match before
@@ -1182,7 +1196,7 @@ button { font-family: inherit; }
   justify-content: center;
   padding: 20px;
   z-index: 55;
-  animation: cq-badge-in 0.25s ease;
+  animation: cq-fade-in 0.18s ease;
 }
 .face-gate-card {
   background: var(--bg-raise);
@@ -1227,7 +1241,7 @@ button { font-family: inherit; }
   padding: 20px;
   z-index: 50;
 }
-.hold-overlay.is-open { display: flex; animation: cq-badge-in 0.25s ease; }
+.hold-overlay.is-open { display: flex; animation: cq-fade-in 0.2s ease; }
 .hold-card {
   background: var(--bg-raise);
   border: 1px solid var(--accent-line);
@@ -1255,7 +1269,6 @@ button { font-family: inherit; }
 
 @media (max-width: 640px) {
   .self-preview { width: 82px; height: 82px; bottom: 84px; right: 12px; }
-  .self-preview.is-collapsed { width: 38px; height: 38px; }
   .tile-grid { padding: 12px; gap: 10px; grid-template-columns: repeat(2, 1fr); align-content: start; }
   .tile { padding: 14px 8px 10px; }
   .tile .avatar { width: 68px; height: 68px; margin-bottom: 10px; }
@@ -1363,6 +1376,18 @@ button { font-family: inherit; }
   background: var(--accent-soft);
   box-shadow: 0 0 8px rgba(46,196,182,0.25);
 }
+/* Entry-gated mode: the call already runs on a light background, so use a
+   solid teal pill so it reads cleanly against light surfaces. */
+.mode-badge.is-entry-gated {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(46,196,182,0.25);
+}
+body.theme-light .mode-badge.is-entry-gated {
+  color: #fff;
+  background: var(--accent);
+}
 @media (max-width: 640px) {
   .mode-badge { font-size: 8.5px; padding: 2px 6px; letter-spacing: 0.14em; }
 }
@@ -1376,7 +1401,7 @@ button { font-family: inherit; }
   background: rgba(46,196,182,0.08);
   border-top: 1px solid var(--accent-line);
   border-bottom: 1px solid var(--accent-line);
-  animation: cq-badge-in 0.3s ease;
+  animation: cq-fade-in 0.22s ease;
 }
 .admit-strip .avatar {
   width: 38px; height: 38px;
@@ -1484,6 +1509,13 @@ button { font-family: inherit; }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* Plain fade-in for full-viewport overlays — leaves transform alone so
+   the overlay doesn't visibly slide in from the left on open. */
+@keyframes cq-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 @keyframes cq-speak {
   0%   { transform: scale(1);    opacity: 0.8; }
   100% { transform: scale(1.25); opacity: 0;   }
@@ -1579,6 +1611,53 @@ button { font-family: inherit; }
 @keyframes cq-link-fill {
   from { fill: #fff; }
   to   { fill: #2ec4b6; }
+}
+
+/* ============================================================
+   Disconnecting (reverse of intro link-up)
+   Start teal (linked), break to grey/white in reverse order:
+   right bracket → dot 3 → dot 2 → dot 1 → left bracket.
+   Rings slow + fade to convey channel tearing down.
+   ============================================================ */
+.intro-loader.is-disconnecting .cq-logo .cq-ring-1 { animation: cq-spin-cw  6s linear infinite, cq-disconnect-ring 1.6s ease forwards 0.4s; }
+.intro-loader.is-disconnecting .cq-logo .cq-ring-2 { animation: cq-spin-ccw 4.4s linear infinite, cq-disconnect-ring 1.6s ease forwards 0.6s; }
+.intro-loader.is-disconnecting .cq-logo .cq-ring-3 { animation: cq-spin-cw  3s linear infinite, cq-disconnect-ring 1.6s ease forwards 0.8s; }
+
+.intro-loader.is-disconnecting .cq-logo .cq-bracket {
+  stroke: #2ec4b6;
+  animation: cq-unlink-stroke 0.42s ease forwards;
+}
+.intro-loader.is-disconnecting .cq-logo .cq-dot {
+  fill: #2ec4b6;
+  animation: cq-unlink-fill 0.42s ease forwards;
+}
+.intro-loader.is-disconnecting .cq-logo .cq-bracket-r { animation-delay: 0.20s; }
+.intro-loader.is-disconnecting .cq-logo .cq-dot-3     { animation-delay: 0.45s; }
+.intro-loader.is-disconnecting .cq-logo .cq-dot-2     { animation-delay: 0.65s; }
+.intro-loader.is-disconnecting .cq-logo .cq-dot-1     { animation-delay: 0.85s; }
+.intro-loader.is-disconnecting .cq-logo .cq-bracket-l { animation-delay: 1.10s; }
+
+/* Skip the confirm-glow on disconnect; instead bleed the glow out. */
+.intro-loader.is-disconnecting .cq-logo .cq-phones {
+  animation: cq-disconnect-glow 1.6s ease forwards;
+}
+
+@keyframes cq-unlink-stroke {
+  from { stroke: #2ec4b6; }
+  to   { stroke: rgba(255,255,255,0.32); }
+}
+@keyframes cq-unlink-fill {
+  from { fill: #2ec4b6; }
+  to   { fill: rgba(255,255,255,0.32); }
+}
+@keyframes cq-disconnect-ring {
+  from { opacity: 1; }
+  to   { opacity: 0.18; }
+}
+@keyframes cq-disconnect-glow {
+  0%   { filter: drop-shadow(0 0 14px rgba(46,196,182,0.85)); }
+  60%  { filter: drop-shadow(0 0 4px  rgba(46,196,182,0.20)); }
+  100% { filter: drop-shadow(0 0 0    rgba(46,196,182,0));    }
 }
 @keyframes cq-intro-confirm {
   0%   { filter: drop-shadow(0 0 3px rgba(46,196,182,0.35)); }
@@ -1751,46 +1830,159 @@ body.theme-light .banner {
 .theme-toggle svg { width: 14px; height: 14px; }
 
 /* ============================================================
-   Self-preview open/hide toggle
+   Compact icon button used in the call header rail-meta
    ============================================================ */
-
-.self-preview .hide-btn {
-  position: absolute;
-  top: 2px; right: 2px;
-  width: 22px; height: 22px;
+.btn-icon-sm {
+  width: 30px; height: 30px;
   border-radius: 50%;
-  background: rgba(0,0,0,0.65);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #fff;
+  background: transparent;
+  border: 1px solid var(--surface-border);
+  color: var(--fg-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 4;
-  transition: background 0.15s, border-color 0.15s;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
 }
-.self-preview .hide-btn:hover { background: rgba(0,0,0,0.85); }
-.self-preview .hide-btn svg { width: 11px; height: 11px; }
+.btn-icon-sm:hover { color: var(--accent); border-color: var(--accent-line); }
+.btn-icon-sm svg { width: 14px; height: 14px; }
 
-/* Collapsed pill mode: just a small floating eye button the user can expand */
-.self-preview.is-collapsed {
-  width: 46px; height: 46px;
-  border-radius: 999px;
+/* ============================================================
+   Share-link sheet (in-call)
+   ============================================================ */
+.share-sheet {
+  position: fixed; inset: 0;
+  background: rgba(11,14,18,0.86);
+  backdrop-filter: blur(8px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 60;
 }
-.self-preview.is-collapsed video { display: none; }
-.self-preview.is-collapsed .label { display: none; }
-.self-preview.is-collapsed .hide-btn {
-  top: 50%; left: 50%; right: auto;
-  width: 100%; height: 100%;
+.share-sheet.is-open { display: flex; animation: cq-fade-in 0.18s ease; }
+.share-card {
+  background: var(--bg-raise);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-card);
+  padding: 26px 24px 22px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: var(--glow-strong);
+}
+.share-card h2 {
+  font-size: 22px;
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.share-card .lead {
+  color: var(--fg-muted);
+  font-size: 13px;
+  margin: 0 0 18px;
+  line-height: 1.45;
+}
+.share-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.share-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--r-soft);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.share-opt:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.share-opt[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.share-opt-icon {
+  width: 36px; height: 36px;
+  flex-shrink: 0;
   border-radius: 50%;
-  background: transparent;
-  border: 0;
-  transform: translate(-50%, -50%);
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.self-preview.is-collapsed .hide-btn svg { width: 16px; height: 16px; color: var(--accent); }
-.self-preview.is-collapsed.state-verified { border-color: var(--accent); box-shadow: 0 0 16px rgba(46,196,182,0.45); }
-.self-preview.is-collapsed.state-away     { border-color: var(--warn);   box-shadow: 0 0 16px rgba(255,181,71,0.40); }
-.self-preview.is-collapsed.state-intruder { border-color: var(--danger); box-shadow: 0 0 16px rgba(255,90,95,0.45); }
+.share-opt-icon svg { width: 16px; height: 16px; }
+.share-opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.share-opt-title { font-size: 14px; font-weight: 500; }
+.share-opt-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+body.theme-light .share-card { background: var(--bg); }
+body.theme-light .share-opt { background: rgba(0,0,0,0.02); }
+
+/* ============================================================
+   Self-preview open/hide toggle
+   The hide button lives OUTSIDE the viewfinder (top-right of viewport)
+   so the view itself stays a clean circle. Theme-aware.
+   ============================================================ */
+
+.self-preview-toggle {
+  position: fixed;
+  top: 76px;
+  right: 20px;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--surface-border);
+  color: var(--fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 22;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s;
+  -webkit-tap-highlight-color: transparent;
+}
+.self-preview-toggle:hover {
+  background: rgba(255,255,255,0.10);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.self-preview-toggle:active { transform: scale(0.94); }
+.self-preview-toggle svg { width: 16px; height: 16px; }
+
+body.theme-light .self-preview-toggle {
+  background: rgba(0,0,0,0.04);
+  border-color: var(--surface-border);
+  color: var(--fg);
+}
+body.theme-light .self-preview-toggle:hover {
+  background: rgba(20,138,127,0.12);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .self-preview-toggle { width: 32px; height: 32px; top: 64px; right: 12px; }
+  .self-preview-toggle svg { width: 14px; height: 14px; }
+}
+
+/* Hidden state — snap instantly so the toggle feels responsive. */
+.self-preview.is-hidden {
+  display: none;
+}
 
 /* ============================================================
    Utilities

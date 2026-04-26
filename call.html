@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Secure Line · on air — Cryptiq</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -52,6 +52,9 @@
         <span class="live-indicator"><span class="dot"></span>LIVE · VOICE</span>
         <span id="roster-count">0 verified</span>
         <span id="mode-badge" class="mode-badge" title="Monitoring mode">ENTRY-GATED</span>
+        <button id="share-btn-top" class="btn-icon btn-icon-sm" type="button" title="Share a link to this line" aria-label="Share link">
+          <span data-icon="link"></span>
+        </button>
         <button id="demo-toggle" class="btn btn-ghost btn-sm" type="button" title="Demo controls" style="display:none;"><span data-icon="sparkles"></span><span class="demo-label">&nbsp;DEMO</span></button>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
       </div>
@@ -62,12 +65,15 @@
 
     <main class="tile-grid" id="tile-grid" aria-live="polite"></main>
 
-    <!-- Self-preview (only visible to yourself). Collapsible via the eye button. -->
+    <!-- Self-preview viewfinder (active monitoring only). The toggle button
+         lives OUTSIDE the viewfinder so the circle stays clean. -->
     <div class="self-preview" id="self-preview">
-      <button class="hide-btn" id="self-toggle" type="button" aria-label="Hide self-preview" title="Hide self-preview"></button>
       <video id="self-video" autoplay playsinline muted></video>
       <div class="label" id="self-label">VERIFYING</div>
     </div>
+    <button class="self-preview-toggle" id="self-toggle" type="button"
+            aria-label="Hide self-preview" title="Hide self-preview"
+            style="display:none;"></button>
 
     <footer class="call-controls">
       <button class="btn-icon" id="mic-btn" title="Mute / unmute (M)" aria-label="Mute">
@@ -75,6 +81,9 @@
       </button>
       <button class="btn-icon" id="hand-btn" title="Request to speak (H)" aria-label="Request to speak">
         <span data-icon="bell"></span>
+      </button>
+      <button class="btn-icon" id="share-btn-bottom" title="Share a link" aria-label="Share link">
+        <span data-icon="link"></span>
       </button>
       <button class="btn-icon" id="hold-btn" title="Hold — you stop hearing the call (O)" aria-label="Hold">
         <span data-icon="pause"></span>
@@ -84,6 +93,53 @@
       </button>
     </footer>
 
+  </div>
+
+  <!-- Share-link sheet. Opens from either the upper-right or lower-control
+       link button. Anyone in the call can mint and copy a link; only the
+       host can mint open-guest links (host approves admissions). -->
+  <div class="share-sheet" id="share-sheet" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="share-card">
+      <div class="card-eyebrow"><span class="dot"></span>SHARE LINK</div>
+      <h2>Bring someone in</h2>
+      <p class="lead" id="share-lead">Pick a link type. We'll mint and copy it.</p>
+
+      <div class="share-options">
+        <button class="share-opt" type="button" data-kind="shared">
+          <span class="share-opt-icon" data-icon="link"></span>
+          <span class="share-opt-text">
+            <span class="share-opt-title">Shared line link</span>
+            <span class="share-opt-sub">Any enrolled attendee can use it · non-expiring</span>
+          </span>
+        </button>
+        <button class="share-opt" type="button" data-kind="open" id="share-opt-open">
+          <span class="share-opt-icon" data-icon="users"></span>
+          <span class="share-opt-text">
+            <span class="share-opt-title">Open guest link</span>
+            <span class="share-opt-sub">Anyone with the URL requests; host admits by face + name</span>
+          </span>
+        </button>
+        <button class="share-opt" type="button" data-kind="onetime">
+          <span class="share-opt-icon" data-icon="send"></span>
+          <span class="share-opt-text">
+            <span class="share-opt-title">One-time link for a specific person</span>
+            <span class="share-opt-sub">Single use · expires in 24 hours</span>
+          </span>
+        </button>
+      </div>
+
+      <div class="link-box" id="share-result" style="display:none; margin-top:18px;">
+        <button class="btn btn-ghost btn-sm copy" id="share-result-copy" type="button">
+          <span data-icon="copy"></span> Copy
+        </button>
+        <div class="label" id="share-result-label">SHARED LINE LINK</div>
+        <div class="url" id="share-result-url"></div>
+      </div>
+
+      <div class="row-end" style="margin-top:18px;">
+        <button class="btn btn-ghost" id="share-close" type="button">Done</button>
+      </div>
+    </div>
   </div>
 
   <!-- Hold overlay — shown when the user self-pauses. Re-verifies to return. -->
@@ -111,7 +167,8 @@
     </div>
   </div>
 
-  <!-- Demo panel — simulate away/intruder to showcase the detection behavior. -->
+  <!-- Demo panel — simulate away/intruder/intruder for peers to showcase
+       the detection states. Only renders when ?demo=1. -->
   <div id="demo-panel" style="
     position: fixed; right: 20px; top: 78px;
     background: var(--bg-raise);
@@ -122,16 +179,24 @@
     z-index: 25;
     display: none;
     font-size: 12px;
+    min-width: 220px;
   ">
-    <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.18em; color:var(--accent); margin-bottom:10px;">SIMULATE</div>
-    <div style="display:flex; flex-direction:column; gap:6px;">
-      <button class="btn btn-ghost btn-sm" id="sim-away" type="button" style="justify-content:flex-start;">Off-camera (away)</button>
-      <button class="btn btn-ghost btn-sm" id="sim-intruder" type="button" style="justify-content:flex-start;">Imposter face</button>
-      <button class="btn btn-ghost btn-sm" id="sim-verified" type="button" style="justify-content:flex-start;">Clear → verified</button>
+    <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.18em; color:var(--accent); margin-bottom:10px;">SIMULATE · YOU</div>
+    <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">
+      <button class="btn btn-ghost btn-sm" id="sim-away" type="button" style="justify-content:flex-start;">Off camera · away</button>
+      <button class="btn btn-ghost btn-sm" id="sim-intruder" type="button" style="justify-content:flex-start;">Different face · intruder</button>
+      <button class="btn btn-ghost btn-sm" id="sim-verified" type="button" style="justify-content:flex-start;">Back in frame · verified</button>
     </div>
-    <div style="font-family:var(--font-mono); font-size:9px; letter-spacing:0.18em; color:var(--fg-dim); margin-top:10px;">
-      Or: cover camera → away.<br>
-      Show 2nd face in frame → imposter.
+    <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.18em; color:var(--accent); margin-bottom:10px;">SIMULATE · OTHERS</div>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <button class="btn btn-ghost btn-sm" id="sim-peer-speak" type="button" style="justify-content:flex-start;">Random peer speaks</button>
+      <button class="btn btn-ghost btn-sm" id="sim-peer-hand" type="button" style="justify-content:flex-start;">Random peer raises hand</button>
+      <button class="btn btn-ghost btn-sm" id="sim-peer-intruder" type="button" style="justify-content:flex-start;">Peer flagged · intruder</button>
+    </div>
+    <div style="font-family:var(--font-mono); font-size:9px; letter-spacing:0.16em; color:var(--fg-dim); margin-top:10px; line-height:1.5;">
+      Real triggers also work:<br>
+      • cover camera → away<br>
+      • another face in frame → intruder
     </div>
   </div>
 
@@ -146,6 +211,7 @@
     };
   </script>
   <script src="js/facetec-bridge.js"></script>
+  <script src="js/cq-disconnecting.js"></script>
   <script>
     cqIconsHydrate();
 
@@ -190,8 +256,16 @@
     const isActiveMonitoring = !!line.activeMonitoring;
     {
       const badge = document.getElementById('mode-badge');
-      badge.textContent = isActiveMonitoring ? 'ACTIVE MONITORING' : 'ENTRY-GATED';
+      badge.textContent = isActiveMonitoring ? 'ACTIVE MONITORING' : 'VERIFIED · ENTRY-GATED';
       badge.classList.toggle('is-active', isActiveMonitoring);
+      badge.classList.toggle('is-entry-gated', !isActiveMonitoring);
+    }
+    // Entry-gated calls run on a light background — every face was verified
+    // at the door, so the call itself is "approved territory" and reads
+    // calmer. Active-monitoring keeps the dark security-console aesthetic.
+    // Re-applied after a microtask so this beats theme.js's stored-pref init.
+    if (!isActiveMonitoring) {
+      document.body.classList.add('theme-light');
     }
     const startedAt = Date.now();
     const clockEl = document.getElementById('line-clock');
@@ -305,22 +379,33 @@
     const selfLabel = document.getElementById('self-label');
     const selfToggle = document.getElementById('self-toggle');
 
-    // Self-preview show/hide toggle. Persists in sessionStorage.
-    const SELF_HIDDEN_KEY = 'cq.secureline.self.hidden';
-    const isSelfHidden = () => { try { return sessionStorage.getItem(SELF_HIDDEN_KEY) === '1'; } catch { return false; } };
-    const applySelfVisibility = () => {
-      const hidden = isSelfHidden();
-      selfPreview.classList.toggle('is-collapsed', hidden);
-      selfToggle.innerHTML = hidden ? cqIcons.eye : cqIcons.eyeOff;
-      selfToggle.title = hidden ? 'Show self-preview' : 'Hide self-preview';
-    };
-    selfToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const cur = isSelfHidden();
-      try { sessionStorage.setItem(SELF_HIDDEN_KEY, cur ? '0' : '1'); } catch {}
+    // Entry-gated mode: no continuous self-preview. The face-gate already
+    // verified the user; showing a constantly-streaming circle would be noisy
+    // and contradictory ("am I being watched or not?"). Hide both pieces.
+    if (!isActiveMonitoring) {
+      selfPreview.style.display = 'none';
+      selfToggle.style.display = 'none';
+    } else {
+      // Active monitoring: toggle button lives outside the viewfinder at
+      // top-right of the viewport. Snap-fast show/hide.
+      const SELF_HIDDEN_KEY = 'cq.secureline.self.hidden';
+      const isSelfHidden = () => { try { return sessionStorage.getItem(SELF_HIDDEN_KEY) === '1'; } catch { return false; } };
+      const applySelfVisibility = () => {
+        const hidden = isSelfHidden();
+        selfPreview.classList.toggle('is-hidden', hidden);
+        selfToggle.innerHTML = hidden ? cqIcons.eye : cqIcons.eyeOff;
+        selfToggle.title = hidden ? 'Show self-preview' : 'Hide self-preview';
+        selfToggle.setAttribute('aria-label', hidden ? 'Show self-preview' : 'Hide self-preview');
+      };
+      selfToggle.style.display = '';
+      selfToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cur = isSelfHidden();
+        try { sessionStorage.setItem(SELF_HIDDEN_KEY, cur ? '0' : '1'); } catch {}
+        applySelfVisibility();
+      });
       applySelfVisibility();
-    });
-    applySelfVisibility();
+    }
 
     let selfStream = null;
     let stopLiveness = null;
@@ -510,9 +595,11 @@
       }
     });
 
-    // Periodic heartbeat + away-sweeper
+    // Periodic heartbeat + away-sweeper. Also pings the line's live-presence
+    // record so other tabs (join.html waiting room) know someone's in here.
     setInterval(() => {
       publishMe();
+      cqLine.pingInCall(line.id, me.id);
       const cutoff = Date.now() - 6000;
       tilesById.forEach((t, pid) => {
         if (pid === me.id) return;
@@ -523,6 +610,8 @@
         }
       });
     }, 2500);
+    // Initial ping so we appear "in call" immediately.
+    cqLine.pingInCall(line.id, me.id);
 
     // ---------- Banner ----------
 
@@ -558,15 +647,22 @@
 
     const leaveCall = () => {
       publishLeave();
+      cqLine.clearLivePresence(line.id, me.id);
       if (stopLiveness) stopLiveness();
       if (stopVad) stopVad();
       cqFacetec.closeStream(selfStream);
       cqLine.clearSession();
-      location.href = '/';
+      // Reverse-of-connecting overlay before bouncing home.
+      if (window.cqDisconnecting && cqDisconnecting.show) {
+        cqDisconnecting.show({ onDone: () => { location.href = '/'; } });
+      } else {
+        location.href = '/';
+      }
     };
 
     window.addEventListener('beforeunload', () => {
       publishLeave();
+      cqLine.clearLivePresence(line.id, me.id);
       cqFacetec.closeStream(selfStream);
     });
 
@@ -761,6 +857,105 @@
     // Initial render in case there's already a pending entry when this tab loads.
     renderAdmitStrip();
 
+    // ---------- Share-link sheet (in-call) ----------
+    //
+    // Anyone in the call can mint and copy a link to invite someone in.
+    // Three flavors: shared (any enrolled), open guest (host admits),
+    // or one-time (24h, single-use, asks for the recipient's name).
+    // The "open guest" option only renders for the host since they're
+    // the one who'll see the admit-strip.
+
+    const shareSheet = document.getElementById('share-sheet');
+    const shareBtnTop = document.getElementById('share-btn-top');
+    const shareBtnBottom = document.getElementById('share-btn-bottom');
+    const shareCloseBtn = document.getElementById('share-close');
+    const shareResult = document.getElementById('share-result');
+    const shareResultUrl = document.getElementById('share-result-url');
+    const shareResultLabel = document.getElementById('share-result-label');
+    const shareResultCopy = document.getElementById('share-result-copy');
+    const shareOptOpen = document.getElementById('share-opt-open');
+
+    const openShareSheet = () => {
+      shareResult.style.display = 'none';
+      shareResultUrl.textContent = '';
+      // Only the host can mint open-guest links — they're the one who admits.
+      if (!isHost) {
+        shareOptOpen.disabled = true;
+        shareOptOpen.title = 'Only the host can admit guests';
+      }
+      shareSheet.classList.add('is-open');
+      shareSheet.setAttribute('aria-hidden', 'false');
+    };
+    const closeShareSheet = () => {
+      shareSheet.classList.remove('is-open');
+      shareSheet.setAttribute('aria-hidden', 'true');
+    };
+
+    shareBtnTop.addEventListener('click', openShareSheet);
+    shareBtnBottom.addEventListener('click', openShareSheet);
+    shareCloseBtn.addEventListener('click', closeShareSheet);
+    shareSheet.addEventListener('click', (e) => { if (e.target === shareSheet) closeShareSheet(); });
+
+    const showShareResult = async (url, label) => {
+      shareResultUrl.textContent = url;
+      shareResultLabel.textContent = label;
+      shareResult.style.display = '';
+      cqIconsHydrate(shareResult);
+      const copied = await cqLine.copyToClipboard(url);
+      banner(copied ? 'Link copied to clipboard' : 'Link ready — copy manually');
+    };
+
+    shareResultCopy.addEventListener('click', async () => {
+      await cqLine.copyToClipboard(shareResultUrl.textContent);
+      banner('Link copied');
+    });
+
+    shareSheet.querySelectorAll('.share-opt').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        const kind = btn.dataset.kind;
+        const fresh = cqLine.getLine(line.id);
+        if (kind === 'shared') {
+          const url = cqLine.buildSharedLink(fresh);
+          showShareResult(url, 'SHARED LINE LINK · NON-EXPIRING');
+          return;
+        }
+        if (kind === 'open') {
+          cqLine.mintOpenLink(line.id);
+          const updated = cqLine.getLine(line.id);
+          const url = cqLine.buildGuestLink(updated);
+          showShareResult(url, 'OPEN GUEST LINK · HOST ADMITS');
+          return;
+        }
+        if (kind === 'onetime') {
+          const name = (prompt('Who is this link for? (their name)') || '').trim();
+          if (!name) return;
+          // Stash a placeholder participant entry so the one-time link binds
+          // to a real id; the recipient will appear under this name.
+          const guest = cqLine.addParticipant(line.id, { name, role: 'guest' });
+          const token = cqLine.mintOneTime(line.id, guest.id, {
+            expiresInMs: cqLine.DURATION_PRESETS['24h'],
+            singleUse: true,
+          });
+          const updated = cqLine.getLine(line.id);
+          const url = cqLine.buildOneTimeLink(updated, token);
+          showShareResult(url, `ONE-TIME · 24H · FOR ${name.toUpperCase()}`);
+          // Make the new participant a tile so we know to expect them.
+          if (!tilesById.has(guest.id)) buildTile(guest);
+          updateRoster();
+        }
+      });
+    });
+
+    // Keyboard shortcut: L for share-link
+    document.addEventListener('keydown', (e) => {
+      if (e.target.matches('input, textarea')) return;
+      if (e.key === 'l' || e.key === 'L') {
+        if (shareSheet.classList.contains('is-open')) closeShareSheet();
+        else openShareSheet();
+      }
+    });
+
     // ---------- Demo panel (only visible when ?demo=1) ----------
 
     const demoBtn = document.getElementById('demo-toggle');
@@ -773,14 +968,57 @@
       demoBtn.addEventListener('click', () => {
         demoPanel.style.display = demoPanel.style.display === 'block' ? 'none' : 'block';
       });
-      document.getElementById('sim-away').addEventListener('click', () => {
-        if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('away', 6000);
+
+      // Force "self" state — relies on the active-monitoring loop being on.
+      // Try-demo seeds the line with activeMonitoring=true so this works.
+      const forceSelf = (state, ms) => {
+        if (stopLiveness && stopLiveness.forceState) {
+          stopLiveness.forceState(state, ms);
+        } else {
+          // Fallback for entry-gated demo: directly set our own state so the
+          // tile/banner reflect it. Reverts after `ms`.
+          myLocal.liveness = state;
+          setSelfPreviewState(state);
+          setPersistentStateBanner(state);
+          setCallAudioSilenced(state === 'intruder');
+          publishMe();
+          setTimeout(() => {
+            myLocal.liveness = 'verified';
+            setSelfPreviewState('verified');
+            setPersistentStateBanner('verified');
+            setCallAudioSilenced(false);
+            publishMe();
+          }, ms);
+        }
+      };
+      document.getElementById('sim-away').addEventListener('click', () => forceSelf('away', 6000));
+      document.getElementById('sim-intruder').addEventListener('click', () => forceSelf('intruder', 6000));
+      document.getElementById('sim-verified').addEventListener('click', () => forceSelf('verified', 2000));
+
+      // Peer simulators: drive a random non-self tile through a state for a
+      // few seconds. This bypasses BroadcastChannel and just paints the tile
+      // locally so the demo runs cleanly in a single tab.
+      const otherPids = () => [...tilesById.keys()].filter(pid => pid !== me.id);
+      const pickPeer = () => {
+        const ids = otherPids();
+        return ids.length ? ids[Math.floor(Math.random() * ids.length)] : null;
+      };
+      document.getElementById('sim-peer-speak').addEventListener('click', () => {
+        const pid = pickPeer(); if (!pid) return;
+        setTileState(pid, 'verified', { speaking: true, muted: false });
+        setTimeout(() => setTileState(pid, 'verified', { speaking: false }), 2400);
       });
-      document.getElementById('sim-intruder').addEventListener('click', () => {
-        if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('intruder', 6000);
+      document.getElementById('sim-peer-hand').addEventListener('click', () => {
+        const pid = pickPeer(); if (!pid) return;
+        setTileState(pid, 'verified', { handRaised: true });
+        setTimeout(() => setTileState(pid, 'verified', { handRaised: false }), 4000);
       });
-      document.getElementById('sim-verified').addEventListener('click', () => {
-        if (stopLiveness && stopLiveness.forceState) stopLiveness.forceState('verified', 2000);
+      document.getElementById('sim-peer-intruder').addEventListener('click', () => {
+        const pid = pickPeer(); if (!pid) return;
+        setTileState(pid, 'intruder', {});
+        const p = line.participants.find(x => x.id === pid);
+        if (p) banner(`${p.name.split(' ')[0]} has an intruder — they can't hear the call`, 'danger');
+        setTimeout(() => setTileState(pid, 'verified', {}), 6000);
       });
     }
 

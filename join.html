@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Join the Secure Line — Cryptiq</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -157,15 +157,18 @@
       tokenKind = 'one-time';
       const entry = line.oneTimeTokens[oneTimeT];
       if (!entry) {
-        renderError('Link invalid', 'That 1-time link wasn’t recognized.');
+        renderError('Link invalid', 'That link wasn’t recognized — it may have been revoked.');
         throw new Error('bad token');
       }
-      if (entry.usedAt) {
-        renderError('Link already used', 'A 1-time link is valid for a single entry. Ask the host to mint a fresh one.');
+      // Single-use links are spent on first entry. Multi-use links stay valid
+      // until they expire (or forever, if minted with no expiry).
+      if (entry.singleUse && entry.usedAt) {
+        renderError('Link already used', 'This single-use link has been spent. Ask the host to mint a fresh one.');
         throw new Error('used');
       }
-      if (Date.now() > entry.expiresAt) {
-        renderError('Link expired', 'This 1-time link has passed its 24h window. Ask the host for a new one.');
+      // expiresAt may be null (= never expires). Only enforce when set.
+      if (entry.expiresAt && Date.now() > entry.expiresAt) {
+        renderError('Link expired', 'This link has passed its expiry window. Ask the host for a new one.');
         throw new Error('expired');
       }
       targetParticipant = line.participants.find(p => p.id === entry.participantId);
@@ -288,6 +291,46 @@
       return best;
     };
 
+    // ---------- Pre-meeting waiting room ----------
+    //
+    // If the host (or any other participant) hasn't entered the call yet,
+    // show a friendly "waiting for the host" state instead of dumping the
+    // verified user into an empty room. Polls live-presence and auto-
+    // proceeds the moment someone shows up.
+
+    let waitingRoomTimer = null;
+    const showWaitingRoom = (callUrl) => {
+      el.eyebrow.textContent = 'WAITING ROOM';
+      el.title.innerHTML = `Hold tight — the meeting hasn’t started yet.`;
+      el.lead.textContent = 'You’re fully verified. We’ll send you in the moment the host opens the line.';
+      el.vf.className = 'viewfinder is-verified';
+      el.status.textContent = 'WAITING FOR HOST…';
+      el.status.className = 'viewfinder-status is-verifying';
+      el.go.disabled = true;
+      el.go.innerHTML = '<span data-icon="phone"></span> Waiting for host…';
+      cqIconsHydrate(el.go);
+
+      const poll = () => {
+        // Anyone in the call (other than us, since we haven't navigated yet)
+        // means it's started.
+        const live = cqLine.liveParticipantIds(lineId);
+        const others = live.filter(pid => pid !== gatePass.participantId);
+        if (others.length) {
+          if (waitingRoomTimer) { clearInterval(waitingRoomTimer); waitingRoomTimer = null; }
+          el.status.textContent = 'HOST IS LIVE · ENTERING…';
+          el.status.className = 'viewfinder-status is-verified';
+          cqFacetec.closeStream(stream);
+          cqConnecting.show({
+            tag:      'Joining live secure line…',
+            tagAfter: 'Secure line established — entering…',
+            onDone: () => { location.href = callUrl; },
+          });
+        }
+      };
+      waitingRoomTimer = setInterval(poll, 1500);
+      poll();
+    };
+
     el.go.addEventListener('click', () => {
       if (!gatePass) return;
       // Burn one-time token
@@ -304,10 +347,19 @@
         entry: tokenKind,
         enteredAt: Date.now(),
       });
-      cqFacetec.closeStream(stream);
       const callUrl = cqLine.buildCallLink(line, gatePass.participantId);
       el.go.disabled = true;
-      cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+
+      // The host opens the meeting; everyone else waits for them. If we're
+      // the host or someone is already live, head straight in. Otherwise
+      // drop into a waiting-room state and auto-enter when the host arrives.
+      const isHost = line.createdBy && (gatePass.participantId === line.createdBy);
+      if (isHost || cqLine.callIsLive(lineId)) {
+        cqFacetec.closeStream(stream);
+        cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+        return;
+      }
+      showWaitingRoom(callUrl);
     });
   </script>
 </body>

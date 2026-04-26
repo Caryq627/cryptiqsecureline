@@ -236,8 +236,9 @@
       alert('That doesn’t look like a secure line link.');
     });
 
-    // "Try a sample call" → seed an in-memory line with demo attendees, then
-    // open the call room with ?demo=1 (which re-enables force-state controls).
+    // "Try a sample call" → seed a fully-populated line and drop the user
+    // into a call room with ?demo=1 (which exposes the simulate panel) and
+    // active-monitoring on (so the simulate buttons actually do something).
     document.getElementById('try-demo').addEventListener('click', (e) => {
       e.preventDefault();
       const svg = (label, bg) => 'data:image/svg+xml;base64,' + btoa(
@@ -248,7 +249,10 @@
         `<text x='100' y='112' text-anchor='middle' font-family='DM Sans' font-size='18' font-weight='700' fill='white' letter-spacing='2'>${label}</text>` +
         `</svg>`
       );
-      const line = cqLine.createLine('Sample call');
+      // Active-monitoring on so the demo panel's sim-away / sim-intruder
+      // controls have something to control. Otherwise entry-gated mode locks
+      // the user to "verified" and the buttons are no-ops.
+      const line = cqLine.createLine('Sample call · demo', { activeMonitoring: true });
       const host = cqLine.addParticipant(line.id, { name: 'You (demo)',  photo: svg('YOU','#0f6660') });
       cqLine.setHost(line.id, host.id);
       cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svg('JC','#3d4a6b') });

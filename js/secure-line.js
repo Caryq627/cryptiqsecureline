@@ -288,6 +288,44 @@
     return url.toString();
   };
 
+  // ---------- live-call markers ----------
+  //
+  // pingInCall: call this every few seconds from call.html so other tabs can
+  // tell whether someone is actually IN the call. Stored as a per-participant
+  // expiring timestamp. callIsLive: returns true if any participant has been
+  // seen within the last `withinMs` (default 8s).
+
+  const PRESENCE_TTL = 8000;
+
+  const pingInCall = (lineId, participantId) => {
+    const line = getLine(lineId);
+    if (!line) return;
+    if (!line.live) line.live = {};
+    line.live[participantId] = Date.now();
+    saveLine(line);
+  };
+
+  const callIsLive = (lineId, withinMs = PRESENCE_TTL) => {
+    const line = getLine(lineId);
+    if (!line || !line.live) return false;
+    const cutoff = Date.now() - withinMs;
+    return Object.values(line.live).some(ts => ts > cutoff);
+  };
+
+  const liveParticipantIds = (lineId, withinMs = PRESENCE_TTL) => {
+    const line = getLine(lineId);
+    if (!line || !line.live) return [];
+    const cutoff = Date.now() - withinMs;
+    return Object.entries(line.live).filter(([_, ts]) => ts > cutoff).map(([pid]) => pid);
+  };
+
+  const clearLivePresence = (lineId, participantId) => {
+    const line = getLine(lineId);
+    if (!line || !line.live) return;
+    delete line.live[participantId];
+    saveLine(line);
+  };
+
   // ---------- presence (cross-tab) ----------
 
   const channel = ('BroadcastChannel' in window)
@@ -394,6 +432,7 @@
     mintOpenLink, revokeOpenLink, buildGuestLink,
     requestGuestJoin, getPending, admitPending, denyPending,
     buildSharedLink, buildOneTimeLink, buildCallLink,
+    pingInCall, callIsLive, liveParticipantIds, clearLivePresence,
     onPresence, emitPresence,
     setSession, getSession, clearSession,
     shortLink, copyToClipboard, formatAge, formatExpiresIn, formatDurationLabel,

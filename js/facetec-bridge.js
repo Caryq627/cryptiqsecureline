@@ -320,7 +320,7 @@
           minMatchLevel: config.minMatchLevel,
         }),
       }, 18_000);
-      if (!res.ok) return { success: false, httpStatus: res.status };
+      if (!res.ok) return { success: false, httpStatus: res.status, networkError: true };
       const data = await res.json();
       if (!_loggedMatch) {
         _loggedMatch = true;
@@ -335,7 +335,10 @@
         raw: data,
       };
     } catch (e) {
-      return { success: true, matchLevel: config.minMatchLevel, _softPass: true };
+      // Network error — DON'T soft-pass. The continuous loop should treat
+      // unreachable server as 'verifying', not as a valid match. Soft-passing
+      // here was the source of "stays verified when not in view" reports.
+      return { success: false, networkError: true, error: String(e) };
     }
   };
 
@@ -494,17 +497,27 @@
       livenessFailStreak = 0;
 
       // Identity match on EVERY tick when a reference photo is set. We
-      // strictly separate two failure reasons:
+      // strictly separate three failure reasons:
       //   - noFace: FaceTec couldn't find a face in the current frame →
       //     route to AWAY (the user isn't really in the camera). Not an
       //     intruder, just not detected.
       //   - mismatch: a face IS in frame but it doesn't match the enrolled
       //     reference → INTRUDER, but only after 2 consecutive confirms so
       //     transient motion/blur/angles don't falsely alarm.
+      //   - network error: server unreachable → 'verifying' (NOT verified).
+      //     Better to show "checking" than to falsely claim verified.
+      //
+      // No skin-tone or color heuristics anywhere. Identity = FaceTec
+      // facial-feature 1:1 match. Liveness = FaceTec 2D. Face presence =
+      // browser FaceDetector (ML model) when available.
       if (refPhoto) {
         const ref = await captureFromDataUrl(refPhoto);
         const m = await match2D(frame, ref);
 
+        if (m.networkError) {
+          emit('verifying', { reason: 'match-network-error', faces: faceN });
+          return;
+        }
         if (m.noFace) {
           awayStreak++;
           intruderStreak = 0;
@@ -520,6 +533,21 @@
           emit('verifying', { matchLevel: m.matchLevel, intruderStreak, faces: faceN });
           return;
         }
+        intruderStreak = 0;
+        emit('verified', { faces: faceN, matchLevel: m.matchLevel });
+        return;
+      }
+
+      // No reference photo on file (e.g. demo line). Without an identity
+      // anchor we can only confirm "a face is present + liveness ok". Be
+      // conservative: only flip to verified if FaceDetector found ≥1 face
+      // — never on liveness alone (which is permissive on a 200 OK).
+      if (faceN === null) {
+        // No FaceDetector and no refPhoto = we cannot definitively prove
+        // a face is present. Stay in 'verifying' rather than falsely
+        // declaring 'verified'.
+        emit('verifying', { reason: 'no-detector-no-ref' });
+        return;
       }
       intruderStreak = 0;
       emit('verified', { faces: faceN });
