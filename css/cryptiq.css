@@ -885,7 +885,7 @@ textarea::placeholder {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 22px;
+  padding: 18px 22px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
   background: rgba(0,0,0,0.3);
   backdrop-filter: blur(8px);
@@ -1407,7 +1407,7 @@ textarea::placeholder {
      Identity wraps to two lines max — name+ID on row 1, clock on row 2 if
      space is tight. Right-side chips are icon-only. */
   .call-header {
-    padding: 8px 10px;
+    padding: 11px 12px;
     flex-wrap: nowrap;
     column-gap: 8px;
   }
@@ -1437,9 +1437,9 @@ textarea::placeholder {
   .call-header .rail-meta #roster-count { display: none; }
   .call-header .rail-meta .mode-badge { font-size: 8.5px; padding: 2px 6px; letter-spacing: 0.08em; }
   .call-header .rail-meta .btn-icon-sm,
-  .call-header .rail-meta .theme-toggle { width: 28px; height: 28px; }
+  .call-header .rail-meta .theme-toggle { width: 34px; height: 34px; }
   .call-header .rail-meta .btn-icon-sm svg,
-  .call-header .rail-meta .theme-toggle svg { width: 13px; height: 13px; }
+  .call-header .rail-meta .theme-toggle svg { width: 15px; height: 15px; }
   .call-controls { padding: 12px; gap: 10px; }
   .call-controls .btn-icon { width: 46px; height: 46px; }
   .call-controls .btn-icon svg { width: 18px; height: 18px; }
@@ -1769,11 +1769,12 @@ body.theme-light .mode-badge.is-entry-gated {
 .intro-loader.is-disconnecting .cq-logo .cq-dot-1     { animation-delay: 0.85s; }
 .intro-loader.is-disconnecting .cq-logo .cq-bracket-l { animation-delay: 1.10s; }
 
-/* Glow holds at full while brackets are still teal (0 - 0.2s), then fades
-   in sync with them turning grey (0.2s - 1.6s). End of fade lines up with
-   the last bracket completing its un-link stroke at ~1.52s. */
+/* No glow on disconnect — the brackets just fade to grey and that's it.
+   Letting the existing pulsing-glow animation continue would compete with
+   the fade. Force a no-op animation that overrides the default glow. */
 .intro-loader.is-disconnecting .cq-logo .cq-phones {
-  animation: cq-disconnect-glow 1.6s ease forwards;
+  animation: none;
+  filter: none !important;
 }
 
 @keyframes cq-unlink-stroke {
@@ -1832,6 +1833,38 @@ body.theme-light .mode-badge.is-entry-gated {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+}
+
+/* Soft teal glow behind the rings on the CONNECT (intro / connecting)
+   variants only. Sits below the SVG and rises as the brackets light up
+   — gives the link-up sequence a "lighting up from within" feel.
+   Disabled on .is-disconnecting so the exit reads as fading out. */
+.intro-loader:not(.is-disconnecting)::before {
+  content: '';
+  position: absolute;
+  width: 360px; height: 360px;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.7);
+  background: radial-gradient(circle,
+    rgba(46,196,182,0.40) 0%,
+    rgba(46,196,182,0.12) 38%,
+    transparent 65%);
+  filter: blur(28px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  animation: cq-bg-glow 2.6s ease-out 0.4s forwards;
+}
+.intro-loader .intro-logo,
+.intro-loader .intro-wordmark,
+.intro-loader .intro-tag { position: relative; z-index: 1; }
+@media (max-width: 640px) {
+  .intro-loader:not(.is-disconnecting)::before { width: 280px; height: 280px; }
+}
+@keyframes cq-bg-glow {
+  0%   { opacity: 0;    transform: translate(-50%, -50%) scale(0.6); }
+  60%  { opacity: 0.55; transform: translate(-50%, -50%) scale(0.95); }
+  100% { opacity: 0.85; transform: translate(-50%, -50%) scale(1); }
 }
 
 .intro-loader .intro-logo {
@@ -1950,7 +1983,7 @@ body.theme-light .banner {
    ============================================================ */
 
 .theme-toggle {
-  width: 32px; height: 32px;
+  width: 36px; height: 36px;
   border-radius: 50%;
   background: transparent;
   border: 1px solid var(--surface-border);
@@ -1962,7 +1995,7 @@ body.theme-light .banner {
   transition: all 0.18s;
 }
 .theme-toggle:hover { color: var(--accent); border-color: var(--accent-line); }
-.theme-toggle svg { width: 14px; height: 14px; }
+.theme-toggle svg { width: 16px; height: 16px; }
 
 /* Theme toggle inside capture / face-gate cards: anchored top-right of
    the card so users can flip dark/light to better illuminate their face. */
@@ -1974,6 +2007,33 @@ body.theme-light .banner {
 }
 .face-gate-card,
 .capture-card { position: relative; }
+
+/* ============================================================
+   Capture overlay (full-viewport modal containing the enrollment
+   card with capture/upload tabs). Used by setup.html, cqEnroll,
+   and the call.html one-time-link form.
+   ============================================================ */
+.capture-overlay {
+  position: fixed; inset: 0;
+  background: rgba(11,14,18,0.86);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 40;
+}
+.capture-overlay.is-open { display: flex; animation: cq-fade-in 0.18s ease; }
+.capture-card {
+  background: var(--bg-raise);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-asym);
+  padding: 28px 24px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--glow-strong);
+  position: relative;
+}
 
 /* ============================================================
    Upload editor — circular frame for pan/zoom photo positioning.
@@ -2198,7 +2258,7 @@ body.theme-light .banner {
    Compact icon button used in the call header rail-meta
    ============================================================ */
 .btn-icon-sm {
-  width: 30px; height: 30px;
+  width: 36px; height: 36px;
   border-radius: 50%;
   background: transparent;
   border: 1px solid var(--surface-border);
@@ -2211,7 +2271,7 @@ body.theme-light .banner {
   -webkit-tap-highlight-color: transparent;
 }
 .btn-icon-sm:hover { color: var(--accent); border-color: var(--accent-line); }
-.btn-icon-sm svg { width: 14px; height: 14px; }
+.btn-icon-sm svg { width: 16px; height: 16px; }
 
 /* ============================================================
    Share-link sheet (in-call)

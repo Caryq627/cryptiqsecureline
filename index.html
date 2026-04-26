@@ -212,6 +212,7 @@
   </script>
   <script src="js/facetec-bridge.js"></script>
   <script src="js/cq-face-gate.js"></script>
+  <script src="js/cq-enroll.js"></script>
   <script src="js/cq-connecting.js"></script>
   <script>
     cqIconsHydrate();
@@ -269,18 +270,15 @@
         `</svg>`
       );
 
-      // Step 1: capture or upload a reference photo. Both paths run
-      // through verifyEnrollmentPhoto which rejects masks/sunglasses/
-      // small faces — so the demo only proceeds with a passable face.
-      cqFaceGate.verify({
-        refPhoto: null,
-        allowUpload: true,
+      // Step 1: enrollment — same UX as setup.html. Tabs (live capture
+      // with manual shutter / upload with pan-zoom). Validation rejects
+      // sunglasses, masks, small or low-quality faces before continuing.
+      cqEnroll.show({
         headline: 'Capture your face',
         sub: 'Step 1 of 2 — take a photo or upload one. Eyes + mouth must be visible.',
         cancelText: 'Cancel demo',
-        onVerified: (capture) => {
-          const refPhoto = (capture && capture.frame) ? capture.frame : svgPlaceholder('YOU', '#0f6660');
-          // Step 2: verify a live capture matches the reference we just took.
+        onCaptured: (refPhoto) => {
+          // Step 2: verify a live capture matches the enrolled reference.
           cqFaceGate.verify({
             refPhoto,
             headline: 'Now show it matches',

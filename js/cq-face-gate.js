@@ -37,7 +37,7 @@
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     const provider = (root.cqFacetec && !root.cqFacetec.simMode)
-      ? `<span class="provider-badge is-live" title="Live identity verification"><span class="dot"></span>LIVE VERIFY · MIN ${root.cqFacetec.minMatchLevel}/9</span>`
+      ? `<span class="provider-badge is-live" title="Live identity verification"><span class="dot"></span>LIVE VERIFY</span>`
       : `<span class="provider-badge is-sim" title="Simulation mode — no live verification server configured"><span class="dot"></span>SIMULATION</span>`;
 
     const uploadBtnHtml = allowUpload
@@ -146,11 +146,17 @@
 
     // Upload-instead handler. Validates the photo (face + no obstructions)
     // and, if good, treats it as the captured frame for onVerified.
+    // Pauses the camera tick during validation so it doesn't race with the
+    // upload check; re-arms it after a failure so the user can retry.
     if (uploadBtn && fileInput) {
       uploadBtn.addEventListener('click', () => fileInput.click());
       fileInput.addEventListener('change', async (e) => {
         const f = e.target.files && e.target.files[0];
         if (!f || !f.type.startsWith('image/')) return;
+        // Stop the live tick so it doesn't overwrite the status while
+        // we're checking the upload.
+        if (timer) { clearInterval(timer); timer = null; }
+        checking = true;
         statusEl.textContent = 'CHECKING PHOTO…';
         statusEl.className = 'viewfinder-status is-verifying';
         vf.className = 'viewfinder is-verifying';
@@ -165,16 +171,29 @@
               'eyes-obstructed':  'EYES NOT VISIBLE — REMOVE SUNGLASSES',
               'mouth-obstructed': 'MOUTH NOT VISIBLE — REMOVE MASK',
               'face-too-small':   'FACE TOO SMALL — USE A CLOSER PHOTO',
+              'low-quality':      'PHOTO TOO LOW QUALITY — TRY A CLEAR FACE',
             })[verdict.reason] || 'PHOTO REJECTED — TRY ANOTHER';
             statusEl.textContent = msg;
             statusEl.className = 'viewfinder-status is-denied';
             vf.className = 'viewfinder is-denied';
+            // Re-arm the live tick after a brief pause so the user can
+            // retry (camera or another upload). Reset the grace window
+            // so transient negatives don't fire instantly.
+            checking = false;
+            fileInput.value = '';
+            setTimeout(() => {
+              if (done) return;
+              gateStart = Date.now();
+              statusEl.textContent = 'CENTER FACE OR PICK ANOTHER PHOTO';
+              statusEl.className = 'viewfinder-status is-verifying';
+              vf.className = 'viewfinder is-verifying';
+              if (!timer) timer = setInterval(tick, 900);
+            }, 1600);
             return;
           }
           statusEl.textContent = 'PHOTO ACCEPTED · ENTERING…';
           statusEl.className = 'viewfinder-status is-verified';
           vf.className = 'viewfinder is-verified';
-          if (timer) { clearInterval(timer); timer = null; }
           setTimeout(() => {
             cleanup();
             if (typeof onVerified === 'function') onVerified({ frame: resized, source: 'upload' });
@@ -216,9 +235,9 @@
         statusEl.textContent = 'VERIFYING IDENTITY…';
         const r = await cqFacetec.gate(video, refPhoto);
         if (r.ok) {
-          statusEl.textContent = typeof r.matchLevel === 'number'
-            ? `VERIFIED · MATCH ${r.matchLevel}/9 · ENTERING…`
-            : 'VERIFIED · ENTERING…';
+          // Don't expose the raw matchLevel in the UI — that's a behind-
+          // the-scenes detail surfaced via console only.
+          statusEl.textContent = 'VERIFIED · ENTERING…';
           statusEl.className = 'viewfinder-status is-verified';
           vf.className = 'viewfinder is-verified';
           if (timer) { clearInterval(timer); timer = null; }
@@ -232,10 +251,7 @@
           vf.className = 'viewfinder is-denied';
           if (timer) { clearInterval(timer); timer = null; }
         } else if (String(r.reason || '').startsWith('no-match') && !inGrace) {
-          const lvl = r.bestMatchLevel;
-          statusEl.textContent = (typeof lvl === 'number')
-            ? `FACE DOES NOT MATCH · LEVEL ${lvl}/9 (NEED ${cqFacetec.minMatchLevel}+)`
-            : 'FACE DOES NOT MATCH';
+          statusEl.textContent = 'FACE DOES NOT MATCH';
           statusEl.className = 'viewfinder-status is-denied';
           vf.className = 'viewfinder is-denied';
         } else {

@@ -9,31 +9,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/cryptiq.css" />
-  <style>
-    .capture-overlay {
-      position: fixed; inset: 0;
-      background: rgba(11,14,18,0.86);
-      backdrop-filter: blur(6px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      z-index: 40;
-    }
-    .capture-overlay.is-open { display: flex; }
-    .capture-card {
-      background: var(--bg-raise);
-      border: 1px solid var(--accent-line);
-      border-radius: var(--r-asym);
-      padding: 28px 24px;
-      width: 100%;
-      max-width: 420px;
-      box-shadow: var(--glow-strong);
-    }
-    /* (Upload-editor styles moved into css/cryptiq.css so they're shared
-       between setup.html's enrollment overlay and call.html's in-call
-       one-time-link form.) */
-  </style>
+  <!-- (Capture-overlay + capture-card + upload-editor styles all live in
+       css/cryptiq.css so cqEnroll can be invoked from any page.) -->
 </head>
 <body>
   <div class="page">
@@ -769,11 +746,14 @@
       const verdict = await cqFacetec.verifyEnrollmentPhoto(cropped);
       if (gen !== editorRevalidateGen) return; // a newer adjustment superseded us
       if (!verdict.ok) {
-        const msg = verdict.reason === 'multiple-faces'
-          ? 'TOO MANY FACES — REPOSITION'
-          : verdict.reason === 'no-face-detected'
-          ? 'NO CLEAR FACE — DRAG / ZOOM TO CENTER'
-          : 'PHOTO REJECTED — TRY ANOTHER';
+        const msg = ({
+          'multiple-faces':   'TOO MANY FACES — REPOSITION',
+          'no-face-detected': 'NO CLEAR FACE — DRAG / ZOOM TO CENTER',
+          'eyes-obstructed':  'EYES NOT VISIBLE — REMOVE SUNGLASSES',
+          'mouth-obstructed': 'MOUTH NOT VISIBLE — REMOVE MASK',
+          'face-too-small':   'FACE TOO SMALL — DRAG / ZOOM CLOSER',
+          'low-quality':      'PHOTO TOO LOW QUALITY — TRY A CLEARER ONE',
+        })[verdict.reason] || 'PHOTO REJECTED — TRY ANOTHER';
         cap.uploadStatus.textContent = msg;
         cap.uploadStatus.className = 'viewfinder-status is-denied';
         cap.uploadPreview.classList.remove('is-verifying');

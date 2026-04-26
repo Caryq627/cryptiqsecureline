@@ -572,7 +572,15 @@
           (typeof s1 === 'number' && s1 !== 0)) {
         return { ok: false, reason: 'no-face-detected', source: 'facetec', raw: data };
       }
-      return { ok: true, source: 'facetec', raw: data };
+      // Self-vs-self match should yield matchLevel ~9 for a clean face.
+      // Lower scores mean feature extraction was inconsistent — typically
+      // sunglasses, masks, blur, harsh angle, or other obstructions even
+      // when image*Status came back 0. Use this as a quality floor.
+      const SELF_QUALITY_FLOOR = 8;
+      if (typeof data.matchLevel === 'number' && data.matchLevel < SELF_QUALITY_FLOOR) {
+        return { ok: false, reason: 'low-quality', matchLevel: data.matchLevel, source: 'facetec', raw: data };
+      }
+      return { ok: true, matchLevel: data.matchLevel, source: 'facetec', raw: data };
     } catch (e) {
       return { ok: false, reason: 'network-error', error: String(e) };
     }

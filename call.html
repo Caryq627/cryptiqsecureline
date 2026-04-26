@@ -52,6 +52,9 @@
       <div class="rail-meta">
         <span id="roster-count" title="Verified attendees">0/0</span>
         <span id="mode-badge" class="mode-badge" title="Monitoring mode">MONITORED</span>
+        <button id="share-btn-top" class="btn-icon btn-icon-sm" type="button" title="Share a link to this line" aria-label="Share link">
+          <span data-icon="share"></span>
+        </button>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
         <button id="hamburger-btn" class="btn-icon btn-icon-sm" type="button" title="Options" aria-label="Options menu">
           <span data-icon="menu"></span>
@@ -1079,8 +1082,8 @@
     //     created at mint time — only when the recipient passes the gate.
 
     const shareSheet     = document.getElementById('share-sheet');
-    const shareBtnTop    = document.getElementById('share-btn-top');
-    const shareBtnBottom = document.getElementById('share-btn-bottom');
+    const shareBtnTopRef = document.getElementById('share-btn-top');
+    const shareBtnBotRef = document.getElementById('share-btn-bottom');
     const shareCloseBtn  = document.getElementById('share-close');
     const shareOptOpen   = document.getElementById('share-opt-open');
     const shareResult    = document.getElementById('share-result');
@@ -1110,8 +1113,8 @@
       otReset();
     };
 
-    if (shareBtnTop)    shareBtnTop.addEventListener('click', openShareSheet);
-    if (shareBtnBottom) shareBtnBottom.addEventListener('click', openShareSheet);
+    if (shareBtnTopRef) shareBtnTopRef.addEventListener('click', openShareSheet);
+    if (shareBtnBotRef) shareBtnBotRef.addEventListener('click', openShareSheet);
     shareCloseBtn.addEventListener('click', closeShareSheet);
     shareSheet.addEventListener('click', (e) => { if (e.target === shareSheet) closeShareSheet(); });
 
@@ -1417,10 +1420,12 @@
     if (!isDemo) {
       demoPanel.remove();
     } else {
-      // In demo mode, hide bottom share button (top share is in the
-      // hamburger menu and we already hid it via display:none above).
-      const sb = document.getElementById('share-btn-bottom');
-      if (sb) sb.style.display = 'none';
+      // In demo mode, hide BOTH share buttons. The hamburger menu already
+      // hides its Share link item via the demo-vs-normal branch above.
+      const sbTop = document.getElementById('share-btn-top');
+      const sbBot = document.getElementById('share-btn-bottom');
+      if (sbTop) sbTop.style.display = 'none';
+      if (sbBot) sbBot.style.display = 'none';
 
       hmSim.addEventListener('click', () => {
         closeHamburger();
