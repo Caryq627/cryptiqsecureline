@@ -30,98 +30,9 @@
       max-width: 420px;
       box-shadow: var(--glow-strong);
     }
-    /* Upload editor: circular frame, draggable image inside, zoom slider. */
-    .upload-editor {
-      position: relative;
-      background: var(--bg-deep);
-      touch-action: none;
-      cursor: grab;
-      user-select: none;
-    }
-    .upload-editor:active { cursor: grabbing; }
-    .upload-img {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%) scale(1);
-      transform-origin: center;
-      width: auto; height: auto;
-      max-width: none; max-height: none;
-      pointer-events: none;
-      -webkit-user-drag: none;
-      user-select: none;
-      display: none;
-    }
-    .upload-img.is-loaded { display: block; }
-    .upload-placeholder {
-      position: absolute; inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: var(--fg-dim);
-      padding: 24px;
-      text-align: center;
-      pointer-events: none;
-    }
-    .upload-placeholder-icon {
-      width: 36px; height: 36px;
-      margin-bottom: 10px;
-      color: var(--accent);
-    }
-    .upload-placeholder-text {
-      font-family: var(--font-mono);
-      font-size: 10px;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-    }
-    .upload-zoom-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin: -8px 0 14px;
-    }
-    .upload-zoom-row .zoom-label {
-      font-family: var(--font-mono);
-      font-size: 9.5px;
-      letter-spacing: 0.18em;
-      color: var(--fg-muted);
-    }
-    .upload-zoom {
-      flex: 1;
-      -webkit-appearance: none;
-      appearance: none;
-      height: 4px;
-      background: var(--bg-deep);
-      border-radius: 2px;
-      outline: none;
-    }
-    .upload-zoom::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 16px; height: 16px;
-      border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 6px rgba(46,196,182,0.55);
-      cursor: pointer;
-    }
-    .upload-zoom::-moz-range-thumb {
-      width: 16px; height: 16px;
-      border-radius: 50%;
-      background: var(--accent);
-      border: 0;
-      box-shadow: 0 0 6px rgba(46,196,182,0.55);
-      cursor: pointer;
-    }
-    .btn-link-action {
-      background: transparent;
-      border: 0;
-      padding: 4px 8px;
-      color: var(--accent);
-      font-family: inherit;
-      font-size: 11px;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .btn-link-action:hover { text-decoration: underline; }
+    /* (Upload-editor styles moved into css/cryptiq.css so they're shared
+       between setup.html's enrollment overlay and call.html's in-call
+       one-time-link form.) */
   </style>
 </head>
 <body>
@@ -184,7 +95,7 @@
 
         <div class="field">
           <label for="line-name">Line name</label>
-          <input id="line-name" type="text" maxlength="60" placeholder="Board call — Q2 planning" autocomplete="off" />
+          <input id="line-name" type="text" maxlength="60" placeholder="enter line name" autocomplete="off" />
         </div>
 
         <!-- Security mode toggle: default is entry-gated, opt-in for
@@ -216,24 +127,6 @@
         </div>
 
         <div id="links-section" class="hidden" style="margin-top:28px;">
-          <div class="exp-row" style="margin-bottom:10px;">
-            <span class="exp-label">Shared link expires</span>
-            <div class="pill-select shared-exp-select" id="shared-exp-select">
-              <button data-exp="1h" type="button">1h</button>
-              <button data-exp="24h" type="button">24h</button>
-              <button data-exp="7d" type="button">7d</button>
-              <button data-exp="30d" type="button">30d</button>
-              <button data-exp="never" type="button" class="is-on">Never</button>
-            </div>
-          </div>
-          <div class="link-box">
-            <button class="btn btn-ghost btn-sm copy" id="copy-shared" type="button">
-              <span data-icon="copy"></span> Copy
-            </button>
-            <div class="label" id="shared-label">SHARED LINE LINK · NON-EXPIRING</div>
-            <div class="url" id="shared-link">—</div>
-          </div>
-
           <!-- Open guest link — anyone with this URL can request to join; the
                host admits them by name + photo when they arrive. -->
           <div class="link-box" id="guest-link-box" style="display:none;">
@@ -271,6 +164,7 @@
   <!-- Capture overlay -->
   <div class="capture-overlay" id="capture-overlay" aria-hidden="true">
     <div class="capture-card">
+      <button class="theme-toggle capture-theme" data-theme-toggle type="button" aria-label="Toggle theme for better lighting"></button>
       <div class="card-eyebrow">
         <span class="dot"></span>
         <span id="cap-eyebrow">ENROLL ATTENDEE</span>
@@ -322,7 +216,7 @@
 
       <div class="field">
         <label for="cap-name">Attendee name</label>
-        <input id="cap-name" type="text" maxlength="48" placeholder="Jane Chen" autocomplete="off" />
+        <input id="cap-name" type="text" maxlength="48" placeholder="enter name" autocomplete="off" />
       </div>
 
       <div class="row-end">
@@ -363,8 +257,6 @@
       addBtn: $('add-person'),
       peopleSection: $('people-section'),
       linksSection: $('links-section'),
-      sharedLink: $('shared-link'),
-      copyShared: $('copy-shared'),
       nextBtn: $('next-btn'),
       backBtn: $('back-btn'),
       step1: $('step-1'), step2: $('step-2'), step3: $('step-3'),
@@ -415,7 +307,6 @@
         el.peopleSection.classList.remove('hidden');
         el.linksSection.classList.remove('hidden');
         el.addBtn.classList.add('hidden');
-        refreshSharedLink();
         renderPeople(true);
         el.nextBtn.innerHTML = '<span data-icon="phone"></span> Enter the line';
         cqIconsHydrate(el.nextBtn);
@@ -683,37 +574,95 @@
       return canvas.toDataURL('image/jpeg', 0.86);
     };
 
-    // Drag-to-pan
-    let dragStartX = 0, dragStartY = 0, dragging = false;
+    // Multi-pointer pan + pinch-zoom. Two pointers on the preview = pinch
+    // (scale based on distance change). One pointer = drag (translate).
+    // All transform updates go through rAF for smoothness.
+    const ptrs = new Map();             // pointerId -> { x, y }
+    let panStart = null;                // { tx, ty, x, y } for single-pointer drag
+    let pinchStart = null;              // { dist, scale, cx, cy }
+    let rafQueued = false;
+
+    const flushTransform = () => {
+      rafQueued = false;
+      clampEditorTranslation();
+      applyEditorTransform();
+    };
+    const queueTransform = () => {
+      if (rafQueued) return;
+      rafQueued = true;
+      requestAnimationFrame(flushTransform);
+    };
+    const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
     cap.uploadPreview.addEventListener('pointerdown', (e) => {
       if (!cap.uploadImg.classList.contains('is-loaded')) return;
-      dragging = true;
-      dragStartX = e.clientX - editor.tx;
-      dragStartY = e.clientY - editor.ty;
-      try { cap.uploadPreview.setPointerCapture(e.pointerId); } catch {}
+      e.preventDefault();
+      cap.uploadPreview.setPointerCapture(e.pointerId);
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (ptrs.size === 1) {
+        panStart = { tx: editor.tx, ty: editor.ty, x: e.clientX, y: e.clientY };
+        pinchStart = null;
+      } else if (ptrs.size === 2) {
+        const [a, b] = [...ptrs.values()];
+        pinchStart = { dist: distance(a, b), scale: editor.userScale };
+        panStart = null;
+      }
     });
-    cap.uploadPreview.addEventListener('pointermove', (e) => {
-      if (!dragging) return;
-      editor.tx = e.clientX - dragStartX;
-      editor.ty = e.clientY - dragStartY;
-      clampEditorTranslation();
-      applyEditorTransform();
-    });
-    const endDrag = (e) => {
-      if (!dragging) return;
-      dragging = false;
-      try { cap.uploadPreview.releasePointerCapture(e.pointerId); } catch {}
-    };
-    cap.uploadPreview.addEventListener('pointerup', endDrag);
-    cap.uploadPreview.addEventListener('pointercancel', endDrag);
-    cap.uploadPreview.addEventListener('pointerleave', endDrag);
 
-    // Zoom slider
+    cap.uploadPreview.addEventListener('pointermove', (e) => {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (ptrs.size === 2 && pinchStart) {
+        const [a, b] = [...ptrs.values()];
+        const dist = distance(a, b);
+        if (pinchStart.dist > 8) {
+          const next = pinchStart.scale * (dist / pinchStart.dist);
+          editor.userScale = Math.max(1, Math.min(3, next));
+          cap.uploadZoom.value = editor.userScale;
+          queueTransform();
+        }
+      } else if (ptrs.size === 1 && panStart) {
+        editor.tx = panStart.tx + (e.clientX - panStart.x);
+        editor.ty = panStart.ty + (e.clientY - panStart.y);
+        queueTransform();
+      }
+    });
+
+    const onPointerEnd = (e) => {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.delete(e.pointerId);
+      try { cap.uploadPreview.releasePointerCapture(e.pointerId); } catch {}
+      // Transition between pan/pinch states cleanly.
+      if (ptrs.size === 1) {
+        const [p] = [...ptrs.values()];
+        panStart = { tx: editor.tx, ty: editor.ty, x: p.x, y: p.y };
+        pinchStart = null;
+      } else if (ptrs.size === 0) {
+        panStart = null;
+        pinchStart = null;
+        // User finished gesturing — re-validate the framing.
+        scheduleEditorRevalidate();
+      }
+    };
+    cap.uploadPreview.addEventListener('pointerup', onPointerEnd);
+    cap.uploadPreview.addEventListener('pointercancel', onPointerEnd);
+    cap.uploadPreview.addEventListener('pointerleave', onPointerEnd);
+
+    // Wheel zoom for desktop users (smooth, fine-grained).
+    cap.uploadPreview.addEventListener('wheel', (e) => {
+      if (!cap.uploadImg.classList.contains('is-loaded')) return;
+      e.preventDefault();
+      const delta = -e.deltaY * 0.0025;
+      editor.userScale = Math.max(1, Math.min(3, editor.userScale + delta));
+      cap.uploadZoom.value = editor.userScale;
+      queueTransform();
+      scheduleEditorRevalidate();
+    }, { passive: false });
+
+    // Zoom slider also drives the same transform path.
     cap.uploadZoom.addEventListener('input', (e) => {
       editor.userScale = parseFloat(e.target.value);
-      clampEditorTranslation();
-      applyEditorTransform();
-      // Re-validate after a short debounce so the user can keep adjusting.
+      queueTransform();
       scheduleEditorRevalidate();
     });
 
@@ -1031,33 +980,9 @@
 
     el.addBtn.addEventListener('click', openCapture);
 
-    // Shared link expiry pills. Default = Never (matches initial line state).
-    const sharedExpRow = document.getElementById('shared-exp-select');
-    const sharedLabelEl = document.getElementById('shared-label');
-    const refreshSharedLink = () => {
-      el.sharedLink.textContent = cqLine.buildSharedLink(line);
-      // Compute current label
-      let lbl = 'SHARED LINE LINK · NON-EXPIRING';
-      if (line.sharedExpiresAt) {
-        lbl = `SHARED LINE LINK · ${cqLine.formatExpiresIn(line.sharedExpiresAt).toUpperCase()}`;
-      }
-      if (sharedLabelEl) sharedLabelEl.textContent = lbl;
-    };
-    sharedExpRow.querySelectorAll('button').forEach(btn => {
-      btn.addEventListener('click', () => {
-        sharedExpRow.querySelectorAll('button').forEach(b => b.classList.toggle('is-on', b === btn));
-        const ms = cqLine.DURATION_PRESETS[btn.dataset.exp];
-        cqLine.setSharedExpiry(line.id, ms);
-        line = cqLine.getLine(line.id);
-        refreshSharedLink();
-        toast(btn.dataset.exp === 'never' ? 'Shared link · never expires' : `Shared link expires in ${btn.dataset.exp}`);
-      });
-    });
-
-    el.copyShared.addEventListener('click', async () => {
-      await cqLine.copyToClipboard(el.sharedLink.textContent);
-      toast('Shared link copied');
-    });
+    // (Shared line link removed — only open-guest + per-attendee one-time
+    // links are offered. Anyone joining must self-enroll & be admitted, OR
+    // use a one-time link bound to a specific name+photo.)
 
     // Open guest link — anyone with the URL can self-enroll and request
     // to join; the host admits by name + photo on the call page.

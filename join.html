@@ -166,23 +166,28 @@
         renderError('Link invalid', 'That link wasn’t recognized — it may have been revoked.');
         throw new Error('bad token');
       }
-      // Single-use links are spent on first entry. Multi-use links stay valid
-      // until they expire (or forever, if minted with no expiry).
       if (entry.singleUse && entry.usedAt) {
         renderError('Link already used', 'This single-use link has been spent. Ask the host to mint a fresh one.');
         throw new Error('used');
       }
-      // expiresAt may be null (= never expires). Only enforce when set.
       if (entry.expiresAt && Date.now() > entry.expiresAt) {
         renderError('Link expired', 'This link has passed its expiry window. Ask the host for a new one.');
         throw new Error('expired');
       }
-      targetParticipant = line.participants.find(p => p.id === entry.participantId);
-      if (!targetParticipant) {
-        renderError('Attendee removed', 'The host revoked the attendee tied to this link.');
-        throw new Error('missing participant');
+      if (entry.pending) {
+        // Named invite — participant won't exist on the line yet. Use the
+        // token's name+photo as a synthetic gate target. consumeOneTime
+        // materializes the actual participant when the user clicks Enter.
+        targetParticipant = { id: null, name: entry.name, photo: entry.photo };
+        el.hint.innerHTML = `Reserved for <strong style="color:var(--accent);">${escapeHtml(entry.name)}</strong>`;
+      } else {
+        targetParticipant = line.participants.find(p => p.id === entry.participantId);
+        if (!targetParticipant) {
+          renderError('Attendee removed', 'The host revoked the attendee tied to this link.');
+          throw new Error('missing participant');
+        }
+        el.hint.innerHTML = `Reserved for <strong style="color:var(--accent);">${escapeHtml(targetParticipant.name)}</strong>`;
       }
-      el.hint.innerHTML = `Reserved for <strong style="color:var(--accent);">${escapeHtml(targetParticipant.name)}</strong>`;
     } else if (sharedT && sharedT === line.sharedToken) {
       // Shared link expiry. null = never expires.
       if (line.sharedExpiresAt && Date.now() > line.sharedExpiresAt) {
@@ -365,6 +370,12 @@
         if (!r.ok) {
           renderError('Link already used', 'A 1-time link is valid for a single entry.');
           return;
+        }
+        // Named invites materialize the participant inside consumeOneTime;
+        // pick up the freshly-minted participantId so the call session
+        // points at a real participant.
+        if (r.participantId) {
+          gatePass.participantId = r.participantId;
         }
       }
       // Stamp gatePassedAt so call.html accepts entry. Without this stamp,

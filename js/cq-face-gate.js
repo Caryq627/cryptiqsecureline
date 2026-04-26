@@ -36,6 +36,7 @@
 
     overlay.innerHTML =
       `<div class="face-gate-card">
+         <button class="theme-toggle capture-theme" data-theme-toggle type="button" aria-label="Toggle theme for better lighting"></button>
          <div class="card-eyebrow"><span class="dot"></span>IDENTITY GATE</div>
          <h2 class="face-gate-title">${escapeHtml(headline)}</h2>
          <p class="face-gate-lead">${escapeHtml(sub)}</p>
@@ -49,6 +50,24 @@
          <button class="btn btn-ghost btn-block" data-role="cancel" type="button">${escapeHtml(cancelText)}</button>
        </div>`;
     document.body.appendChild(overlay);
+    // Hydrate the theme toggle so its icon paints and click is wired.
+    if (root.cqTheme) {
+      const tt = overlay.querySelector('[data-theme-toggle]');
+      if (tt) {
+        const c = root.cqTheme.current ? root.cqTheme.current() : 'dark';
+        const iconKey = c === 'light' ? 'moon' : 'sun';
+        tt.innerHTML = (root.cqIcons && root.cqIcons[iconKey]) || '';
+        tt.title = c === 'light' ? 'Switch to dark' : 'Switch to light';
+        tt.addEventListener('click', () => {
+          if (root.cqTheme.toggle) root.cqTheme.toggle();
+          // Re-paint our local toggle icon since the global hydrator
+          // doesn't run in this isolated overlay.
+          const cn = root.cqTheme.current();
+          const ik = cn === 'light' ? 'moon' : 'sun';
+          tt.innerHTML = (root.cqIcons && root.cqIcons[ik]) || '';
+        });
+      }
+    }
 
     const video     = overlay.querySelector('[data-role="video"]');
     const vf        = overlay.querySelector('[data-role="vf"]');

@@ -159,6 +159,32 @@
     return token;
   };
 
+  // Mint a one-time link bound to a NAME + REFERENCE PHOTO that aren't yet
+  // a participant on this line. The recipient gates against the photo; on
+  // first successful gate pass, consumeOneTime materializes the participant
+  // (so generating the link doesn't inflate the call roster).
+  const mintNamedInvite = (lineId, opts = {}) => {
+    const { name, photo, expiresInMs = DURATION_PRESETS['24h'], singleUse = true } = opts;
+    const line = getLine(lineId);
+    if (!line) throw new Error('Line not found');
+    const token = randToken(20);
+    line.oneTimeTokens[token] = {
+      participantId: null,         // assigned at consume time
+      name: String(name || '').trim() || 'Guest',
+      photo: photo || null,         // ref photo for face-gate
+      pending: true,                // marks "named invite" — see consumeOneTime
+      createdAt: Date.now(),
+      expiresAt: (expiresInMs === null || expiresInMs === undefined)
+        ? null
+        : Date.now() + expiresInMs,
+      singleUse: !!singleUse,
+      usedAt: null,
+      usedCount: 0,
+    };
+    saveLine(line);
+    return token;
+  };
+
   const consumeOneTime = (lineId, token) => {
     const line = getLine(lineId);
     if (!line) return { ok: false, reason: 'line-missing' };
@@ -166,6 +192,21 @@
     if (!entry) return { ok: false, reason: 'invalid' };
     if (entry.singleUse && entry.usedAt) return { ok: false, reason: 'used' };
     if (entry.expiresAt && Date.now() > entry.expiresAt) return { ok: false, reason: 'expired' };
+    // Named invite (no participant yet): create them now. This is the
+    // moment the host's "invitation" turns into a real attendee on the
+    // call — only when they actually pass the gate, never at mint time.
+    if (entry.pending && !entry.participantId) {
+      const pid = randToken(10);
+      line.participants.push({
+        id: pid,
+        name: entry.name,
+        photo: entry.photo,
+        role: 'guest',
+        enrolledAt: Date.now(),
+      });
+      entry.participantId = pid;
+      entry.pending = false;
+    }
     entry.usedAt = Date.now();
     entry.usedCount = (entry.usedCount || 0) + 1;
     saveLine(line);
@@ -527,7 +568,7 @@
   root.cqLine = {
     getLine, saveLine, deleteLine, createLine, setActiveMonitoring, setSharedExpiry,
     addParticipant, removeParticipant, setHost,
-    mintOneTime, consumeOneTime, revokeOneTime, findParticipantByToken,
+    mintOneTime, mintNamedInvite, consumeOneTime, revokeOneTime, findParticipantByToken,
     mintOpenLink, revokeOpenLink, buildGuestLink,
     requestGuestJoin, getPending, admitPending, denyPending,
     buildSharedLink, buildOneTimeLink, buildCallLink,

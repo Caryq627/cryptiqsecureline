@@ -52,15 +52,29 @@
       <div class="rail-meta">
         <span id="roster-count" title="Verified attendees">0/0</span>
         <span id="mode-badge" class="mode-badge" title="Monitoring mode">MONITORED</span>
-        <button id="share-btn-top" class="btn-icon btn-icon-sm" type="button" title="Share a link to this line" aria-label="Share link">
-          <span data-icon="share"></span>
-        </button>
-        <button id="demo-toggle" class="btn-icon btn-icon-sm" type="button" title="Demo controls" aria-label="Demo controls" style="display:none;">
-          <span data-icon="sparkles"></span>
-        </button>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
+        <button id="hamburger-btn" class="btn-icon btn-icon-sm" type="button" title="Options" aria-label="Options menu">
+          <span data-icon="menu"></span>
+        </button>
       </div>
     </header>
+
+    <!-- Options dropdown anchored to the hamburger button. Contents differ
+         in demo vs normal mode (see JS). -->
+    <div id="hamburger-menu" class="hamburger-menu" aria-hidden="true" role="menu">
+      <button class="hm-item" id="hm-share" type="button" role="menuitem">
+        <span class="hm-icon" data-icon="share"></span>
+        <span>Share link</span>
+      </button>
+      <button class="hm-item" id="hm-monitoring" type="button" role="menuitem">
+        <span class="hm-icon" data-icon="shieldCheck"></span>
+        <span class="hm-label" id="hm-monitoring-label">Active monitoring · OFF</span>
+      </button>
+      <button class="hm-item" id="hm-simulate" type="button" role="menuitem">
+        <span class="hm-icon" data-icon="sparkles"></span>
+        <span>Simulate panel</span>
+      </button>
+    </div>
 
     <div id="state-banner-slot"></div>
     <div id="admit-slot"></div>
@@ -97,61 +111,102 @@
 
   </div>
 
-  <!-- Share-link sheet. Opens from either the upper-right or lower-control
-       link button. Anyone in the call can mint and copy a link; only the
-       host can mint open-guest links (host approves admissions). -->
+  <!-- Share-link sheet. Two views inside the same card:
+        view=list — pick link type (open-guest / one-time-named)
+        view=onetime-form — enter name + upload reference photo
+        view=result — copyable URL after mint -->
   <div class="share-sheet" id="share-sheet" aria-hidden="true" role="dialog" aria-modal="true">
     <div class="share-card">
-      <div class="card-eyebrow"><span class="dot"></span>SHARE LINK</div>
-      <h2>Bring someone in</h2>
-      <p class="lead" id="share-lead">Pick how long it stays valid, then choose a link type.</p>
 
-      <div class="exp-row" style="margin-bottom: 14px;">
-        <span class="exp-label">Expiry</span>
-        <div class="pill-select share-exp-select" id="share-exp-select">
-          <button data-exp="1h"   type="button">1h</button>
-          <button data-exp="24h"  type="button" class="is-on">24h</button>
-          <button data-exp="7d"   type="button">7d</button>
-          <button data-exp="30d"  type="button">30d</button>
-          <button data-exp="never" type="button">Never</button>
+      <!-- VIEW: list -->
+      <div class="share-view" data-view="list">
+        <div class="card-eyebrow"><span class="dot"></span>SHARE LINK</div>
+        <h2>Bring someone in</h2>
+        <p class="lead">Pick how long it stays valid, then choose a link type.</p>
+
+        <div class="exp-row" style="margin-bottom: 14px;">
+          <span class="exp-label">Expiry</span>
+          <div class="pill-select share-exp-select" id="share-exp-select">
+            <button data-exp="1h"   type="button">1h</button>
+            <button data-exp="24h"  type="button" class="is-on">24h</button>
+            <button data-exp="7d"   type="button">7d</button>
+            <button data-exp="30d"  type="button">30d</button>
+            <button data-exp="never" type="button">Never</button>
+          </div>
+        </div>
+
+        <div class="share-options">
+          <button class="share-opt" type="button" data-kind="open" id="share-opt-open">
+            <span class="share-opt-icon" data-icon="users"></span>
+            <span class="share-opt-text">
+              <span class="share-opt-title">Open guest link</span>
+              <span class="share-opt-sub">Anyone with the URL requests; host admits by face + name</span>
+            </span>
+          </button>
+          <button class="share-opt" type="button" data-kind="onetime">
+            <span class="share-opt-icon" data-icon="send"></span>
+            <span class="share-opt-text">
+              <span class="share-opt-title">One-time link for a specific person</span>
+              <span class="share-opt-sub">You provide name + photo · they must match it to enter</span>
+            </span>
+          </button>
+        </div>
+
+        <div class="row-end" style="margin-top:18px;">
+          <button class="btn btn-ghost" id="share-close" type="button">Done</button>
         </div>
       </div>
 
-      <div class="share-options">
-        <button class="share-opt" type="button" data-kind="shared">
-          <span class="share-opt-icon" data-icon="link"></span>
-          <span class="share-opt-text">
-            <span class="share-opt-title">Shared line link</span>
-            <span class="share-opt-sub">Any enrolled attendee can use it · non-expiring</span>
-          </span>
-        </button>
-        <button class="share-opt" type="button" data-kind="open" id="share-opt-open">
-          <span class="share-opt-icon" data-icon="users"></span>
-          <span class="share-opt-text">
-            <span class="share-opt-title">Open guest link</span>
-            <span class="share-opt-sub">Anyone with the URL requests; host admits by face + name</span>
-          </span>
-        </button>
-        <button class="share-opt" type="button" data-kind="onetime">
-          <span class="share-opt-icon" data-icon="send"></span>
-          <span class="share-opt-text">
-            <span class="share-opt-title">One-time link for a specific person</span>
-            <span class="share-opt-sub">Single use · expires in 24 hours</span>
-          </span>
-        </button>
+      <!-- VIEW: onetime-form (name + photo upload) -->
+      <div class="share-view" data-view="onetime" hidden>
+        <div class="card-eyebrow"><span class="dot"></span>ONE-TIME LINK</div>
+        <h2>Who is this for?</h2>
+        <p class="lead">Enter the recipient's name and a photo of their face. They'll have to match it to enter.</p>
+
+        <div class="field" style="margin-top: 12px;">
+          <label for="ot-name">Recipient name</label>
+          <input id="ot-name" type="text" maxlength="48" autocomplete="off" placeholder="enter name" />
+        </div>
+
+        <div class="viewfinder upload-editor" id="ot-preview">
+          <div class="upload-placeholder" id="ot-placeholder">
+            <div class="upload-placeholder-icon" data-icon="upload"></div>
+            <div class="upload-placeholder-text">tap to upload photo</div>
+          </div>
+          <img class="upload-img" id="ot-img" alt="" draggable="false" />
+        </div>
+        <input id="ot-file" type="file" accept="image/*" style="display:none" />
+        <div class="viewfinder-status" id="ot-status">CHOOSE A PHOTO OF THEIR FACE</div>
+
+        <div class="row-end" style="margin-top:14px; gap:10px;">
+          <button class="btn btn-ghost" id="ot-back" type="button">← Back</button>
+          <button class="btn btn-primary" id="ot-mint" type="button" disabled>
+            <span data-icon="send"></span>
+            Generate link
+          </button>
+        </div>
       </div>
 
-      <div class="link-box" id="share-result" style="display:none; margin-top:18px;">
-        <button class="btn btn-ghost btn-sm copy" id="share-result-copy" type="button">
-          <span data-icon="copy"></span> Copy
-        </button>
-        <div class="label" id="share-result-label">SHARED LINE LINK</div>
-        <div class="url" id="share-result-url"></div>
+      <!-- VIEW: result (URL after mint) -->
+      <div class="share-view" data-view="result" hidden>
+        <div class="card-eyebrow"><span class="dot"></span>LINK READY</div>
+        <h2 id="share-result-title">Send this link</h2>
+        <p class="lead" id="share-result-lead">It's been copied to your clipboard.</p>
+
+        <div class="link-box" id="share-result">
+          <button class="btn btn-ghost btn-sm copy" id="share-result-copy" type="button">
+            <span data-icon="copy"></span> Copy
+          </button>
+          <div class="label" id="share-result-label">LINK</div>
+          <div class="url" id="share-result-url"></div>
+        </div>
+
+        <div class="row-end" style="margin-top:18px;">
+          <button class="btn btn-ghost" id="share-result-back" type="button">Make another</button>
+          <button class="btn btn-primary" id="share-result-done" type="button" style="margin-left: 10px;">Done</button>
+        </div>
       </div>
 
-      <div class="row-end" style="margin-top:18px;">
-        <button class="btn btn-ghost" id="share-close" type="button">Done</button>
-      </div>
     </div>
   </div>
 
@@ -316,7 +371,9 @@
     // Monitoring mode — entry-gated by default; active monitoring is opt-in
     // when the host creates the line. In entry-gated mode we trust the
     // entry face-gate and skip continuous liveness/match calls entirely.
-    const isActiveMonitoring = !!line.activeMonitoring;
+    // Mutable so the demo hamburger menu can flip it on/off. Starts as
+    // configured on the line.
+    let isActiveMonitoring = !!line.activeMonitoring;
     {
       const badge = document.getElementById('mode-badge');
       // Entry-gated mode: tile-level VERIFIED pills are enough — no extra
@@ -447,32 +504,31 @@
     const selfLabel = document.getElementById('self-label');
     const selfToggle = document.getElementById('self-toggle');
 
-    // Entry-gated mode: no continuous self-preview. The face-gate already
-    // verified the user; showing a constantly-streaming circle would be noisy
-    // and contradictory ("am I being watched or not?"). Hide both pieces.
+    // Self-preview eye-toggle: wired up regardless of monitoring state so
+    // it works after toggling monitoring on/off mid-call. Visibility of
+    // both pieces is driven by isActiveMonitoring.
+    const SELF_HIDDEN_KEY = 'cq.secureline.self.hidden';
+    const isSelfHidden = () => { try { return sessionStorage.getItem(SELF_HIDDEN_KEY) === '1'; } catch { return false; } };
+    const applySelfVisibility = () => {
+      const hidden = isSelfHidden();
+      selfPreview.classList.toggle('is-hidden', hidden);
+      selfToggle.innerHTML = hidden ? cqIcons.eye : cqIcons.eyeOff;
+      selfToggle.title = hidden ? 'Show self-preview' : 'Hide self-preview';
+      selfToggle.setAttribute('aria-label', hidden ? 'Show self-preview' : 'Hide self-preview');
+    };
+    selfToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = isSelfHidden();
+      try { sessionStorage.setItem(SELF_HIDDEN_KEY, cur ? '0' : '1'); } catch {}
+      applySelfVisibility();
+    });
+    applySelfVisibility();
     if (!isActiveMonitoring) {
+      // Hide BOTH the viewfinder and the toggle when monitoring is off.
       selfPreview.style.display = 'none';
       selfToggle.style.display = 'none';
     } else {
-      // Active monitoring: toggle button lives outside the viewfinder at
-      // top-right of the viewport. Snap-fast show/hide.
-      const SELF_HIDDEN_KEY = 'cq.secureline.self.hidden';
-      const isSelfHidden = () => { try { return sessionStorage.getItem(SELF_HIDDEN_KEY) === '1'; } catch { return false; } };
-      const applySelfVisibility = () => {
-        const hidden = isSelfHidden();
-        selfPreview.classList.toggle('is-hidden', hidden);
-        selfToggle.innerHTML = hidden ? cqIcons.eye : cqIcons.eyeOff;
-        selfToggle.title = hidden ? 'Show self-preview' : 'Hide self-preview';
-        selfToggle.setAttribute('aria-label', hidden ? 'Show self-preview' : 'Hide self-preview');
-      };
       selfToggle.style.display = '';
-      selfToggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const cur = isSelfHidden();
-        try { sessionStorage.setItem(SELF_HIDDEN_KEY, cur ? '0' : '1'); } catch {}
-        applySelfVisibility();
-      });
-      applySelfVisibility();
     }
 
     let selfStream = null;
@@ -669,9 +725,13 @@
           handRaised: !!msg.handRaised,
           speaking: !!msg.speaking,
         });
+        // Surface a sticky inline banner when a peer is flagged intruder;
+        // clear it as soon as they return to verified or away.
         if (msg.state === 'intruder' && prev !== 'intruder') {
           const p = line.participants.find(x => x.id === msg.pid);
-          if (p) banner(`${p.name.split(' ')[0]} has an intruder — they can't hear the call`, 'danger');
+          setPeerStateBanner(msg.pid, `${p ? p.name.split(' ')[0] : 'Peer'} has an intruder · their call audio is silenced`);
+        } else if (msg.state !== 'intruder' && prev === 'intruder') {
+          setPeerStateBanner(msg.pid, null);
         }
       }
     });
@@ -717,9 +777,24 @@
       bannerTimer = setTimeout(() => b.remove(), 3200);
     };
 
-    // Sticky banner that persists for the entire duration the user is
-    // away or flagged as an intruder — clears on return to verified.
+    // Sticky banner stack. SELF status (away/intruder/held) sits at the
+    // top; PEER alerts (other participants flagged as intruder) stack
+    // below it. All banners are inline (not fixed-position toasts) so
+    // the tile grid auto-pushes down to make room — no overlap.
     const bannerSlot = document.getElementById('state-banner-slot');
+    const peerBanners = new Map();   // pid -> text or null
+    let selfBannerText = null;       // own-state text
+    let selfBannerKind = '';
+    const renderBanners = () => {
+      const html = [];
+      if (selfBannerText) {
+        html.push(`<div class="state-banner ${selfBannerKind}"><span class="dot"></span>${escapeHtml(selfBannerText)}</div>`);
+      }
+      for (const [, text] of peerBanners) {
+        if (text) html.push(`<div class="state-banner is-danger"><span class="dot"></span>${escapeHtml(text)}</div>`);
+      }
+      bannerSlot.innerHTML = html.join('');
+    };
     const setPersistentStateBanner = (state) => {
       if (state === 'away' || state === 'intruder' || state === 'held') {
         const config = {
@@ -727,10 +802,19 @@
           intruder: { text: 'Intruder · call audio silenced',     kind: 'is-danger' },
           held:     { text: 'On hold · tap return to re-verify',  kind: 'is-warn' },
         }[state];
-        bannerSlot.innerHTML = `<div class="state-banner ${config.kind}"><span class="dot"></span>${config.text}</div>`;
+        selfBannerText = config.text;
+        selfBannerKind = config.kind;
       } else {
-        bannerSlot.innerHTML = '';
+        selfBannerText = null;
+        selfBannerKind = '';
       }
+      renderBanners();
+    };
+    // Set or clear a banner for a peer (pass null/empty text to clear).
+    const setPeerStateBanner = (pid, text) => {
+      if (text) peerBanners.set(pid, text);
+      else peerBanners.delete(pid);
+      renderBanners();
     };
 
     // ---------- Lifecycle ----------
@@ -975,26 +1059,32 @@
 
     // ---------- Share-link sheet (in-call) ----------
     //
-    // Anyone in the call can mint and copy a link to invite someone in.
-    // Three flavors: shared (any enrolled), open guest (host admits),
-    // or one-time (24h, single-use, asks for the recipient's name).
-    // The "open guest" option only renders for the host since they're
-    // the one who'll see the admit-strip.
+    // Two link types:
+    //   - Open guest: anyone with the URL requests; host admits with their
+    //     self-enrolled name and photo.
+    //   - One-time named invite: host enters name + uploads recipient's
+    //     photo; recipient must match it to enter. Participant is NOT
+    //     created at mint time — only when the recipient passes the gate.
 
-    const shareSheet = document.getElementById('share-sheet');
-    const shareBtnTop = document.getElementById('share-btn-top');
+    const shareSheet     = document.getElementById('share-sheet');
+    const shareBtnTop    = document.getElementById('share-btn-top');
     const shareBtnBottom = document.getElementById('share-btn-bottom');
-    const shareCloseBtn = document.getElementById('share-close');
-    const shareResult = document.getElementById('share-result');
+    const shareCloseBtn  = document.getElementById('share-close');
+    const shareOptOpen   = document.getElementById('share-opt-open');
+    const shareResult    = document.getElementById('share-result');
     const shareResultUrl = document.getElementById('share-result-url');
-    const shareResultLabel = document.getElementById('share-result-label');
-    const shareResultCopy = document.getElementById('share-result-copy');
-    const shareOptOpen = document.getElementById('share-opt-open');
+    const shareResultLbl = document.getElementById('share-result-label');
+    const shareResultCpy = document.getElementById('share-result-copy');
 
+    // Multi-view state: list / onetime form / result.
+    const showShareView = (which) => {
+      shareSheet.querySelectorAll('.share-view').forEach(v => {
+        v.hidden = (v.dataset.view !== which);
+      });
+    };
     const openShareSheet = () => {
-      shareResult.style.display = 'none';
-      shareResultUrl.textContent = '';
-      // Only the host can mint open-guest links — they're the one who admits.
+      showShareView('list');
+      // Only the host can mint open-guest links (they're the one admitting).
       if (!isHost) {
         shareOptOpen.disabled = true;
         shareOptOpen.title = 'Only the host can admit guests';
@@ -1005,28 +1095,31 @@
     const closeShareSheet = () => {
       shareSheet.classList.remove('is-open');
       shareSheet.setAttribute('aria-hidden', 'true');
+      otReset();
     };
 
-    shareBtnTop.addEventListener('click', openShareSheet);
-    shareBtnBottom.addEventListener('click', openShareSheet);
+    if (shareBtnTop)    shareBtnTop.addEventListener('click', openShareSheet);
+    if (shareBtnBottom) shareBtnBottom.addEventListener('click', openShareSheet);
     shareCloseBtn.addEventListener('click', closeShareSheet);
     shareSheet.addEventListener('click', (e) => { if (e.target === shareSheet) closeShareSheet(); });
 
-    const showShareResult = async (url, label) => {
+    const showResultView = async (url, label) => {
       shareResultUrl.textContent = url;
-      shareResultLabel.textContent = label;
-      shareResult.style.display = '';
+      shareResultLbl.textContent = label;
       cqIconsHydrate(shareResult);
+      showShareView('result');
       const copied = await cqLine.copyToClipboard(url);
       banner(copied ? 'Link copied to clipboard' : 'Link ready — copy manually');
     };
 
-    shareResultCopy.addEventListener('click', async () => {
+    shareResultCpy.addEventListener('click', async () => {
       await cqLine.copyToClipboard(shareResultUrl.textContent);
       banner('Link copied');
     });
+    document.getElementById('share-result-back').addEventListener('click', () => showShareView('list'));
+    document.getElementById('share-result-done').addEventListener('click', closeShareSheet);
 
-    // Track the currently-selected expiry pill for the share sheet.
+    // Expiry pills (apply to whichever option the host picks).
     const shareExp = { key: '24h' };
     const shareExpSelect = document.getElementById('share-exp-select');
     shareExpSelect.querySelectorAll('button').forEach(btn => {
@@ -1035,45 +1128,115 @@
         shareExpSelect.querySelectorAll('button').forEach(b => b.classList.toggle('is-on', b === btn));
       });
     });
-
     const expLabel = (key) => key === 'never' ? 'NON-EXPIRING' : `EXPIRES IN ${key.toUpperCase()}`;
 
-    shareSheet.querySelectorAll('.share-opt').forEach(btn => {
+    // ---- One-time form: name + photo upload + face validation ----
+    const otName  = document.getElementById('ot-name');
+    const otFile  = document.getElementById('ot-file');
+    const otPrev  = document.getElementById('ot-preview');
+    const otImg   = document.getElementById('ot-img');
+    const otHolder= document.getElementById('ot-placeholder');
+    const otStat  = document.getElementById('ot-status');
+    const otBack  = document.getElementById('ot-back');
+    const otMint  = document.getElementById('ot-mint');
+    let otPhoto = null;  // validated dataURL ready for mint
+
+    const otReset = () => {
+      otName.value = '';
+      otFile.value = '';
+      otImg.src = '';
+      otImg.classList.remove('is-loaded');
+      otHolder.style.display = '';
+      otStat.textContent = 'CHOOSE A PHOTO OF THEIR FACE';
+      otStat.className = 'viewfinder-status';
+      otPrev.classList.remove('is-verifying','is-verified','is-denied');
+      otPhoto = null;
+      otMint.disabled = true;
+    };
+    const otCheckReady = () => {
+      otMint.disabled = !(otPhoto && otName.value.trim());
+    };
+    otName.addEventListener('input', otCheckReady);
+
+    const otValidate = async (dataUrl) => {
+      otStat.textContent = 'CHECKING PHOTO…';
+      otStat.className = 'viewfinder-status is-verifying';
+      otPrev.classList.remove('is-verified','is-denied');
+      otPrev.classList.add('is-verifying');
+      otPhoto = null;
+      otMint.disabled = true;
+
+      const verdict = await cqFacetec.verifyEnrollmentPhoto(dataUrl);
+      if (!verdict.ok) {
+        const msg = verdict.reason === 'multiple-faces' ? 'TOO MANY FACES IN PHOTO'
+                  : verdict.reason === 'no-face-detected' ? 'NO CLEAR FACE — TRY ANOTHER'
+                  : 'PHOTO REJECTED — TRY ANOTHER';
+        otStat.textContent = msg;
+        otStat.className = 'viewfinder-status is-denied';
+        otPrev.classList.remove('is-verifying');
+        otPrev.classList.add('is-denied');
+        return;
+      }
+      otPhoto = dataUrl;
+      otStat.textContent = 'PHOTO VERIFIED · READY';
+      otStat.className = 'viewfinder-status is-verified';
+      otPrev.classList.remove('is-verifying');
+      otPrev.classList.add('is-verified');
+      otCheckReady();
+    };
+
+    otPrev.addEventListener('click', () => otFile.click());
+    otStat.addEventListener('click', () => otFile.click());
+    otFile.addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f || !f.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        // Downscale before validation/storage.
+        const resized = await cqFacetec.captureFromDataUrl(reader.result, 480);
+        otImg.src = resized;
+        otImg.classList.add('is-loaded');
+        otHolder.style.display = 'none';
+        await otValidate(resized);
+      };
+      reader.readAsDataURL(f);
+    });
+
+    otBack.addEventListener('click', () => showShareView('list'));
+    otMint.addEventListener('click', () => {
+      if (!otPhoto || !otName.value.trim()) return;
+      const expMs = cqLine.DURATION_PRESETS[shareExp.key];
+      const token = cqLine.mintNamedInvite(line.id, {
+        name: otName.value,
+        photo: otPhoto,
+        expiresInMs: expMs,
+        singleUse: true,
+      });
+      const updated = cqLine.getLine(line.id);
+      const url = cqLine.buildOneTimeLink(updated, token);
+      showResultView(url, `ONE-TIME · ${expLabel(shareExp.key)} · FOR ${otName.value.toUpperCase()}`);
+      // NOTE: do NOT add a tile here — participant doesn't exist until the
+      // recipient passes the gate via consumeOneTime.
+    });
+
+    // List view — clicking a share-opt either mints immediately (open
+    // guest) or advances to the one-time form.
+    shareSheet.querySelectorAll('[data-view="list"] .share-opt').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (btn.disabled) return;
         const kind = btn.dataset.kind;
-        const expMs = cqLine.DURATION_PRESETS[shareExp.key];
-        if (kind === 'shared') {
-          // Apply the chosen expiry to the line's shared-link metadata.
-          cqLine.setSharedExpiry(line.id, expMs);
-          const fresh = cqLine.getLine(line.id);
-          const url = cqLine.buildSharedLink(fresh);
-          showShareResult(url, `SHARED LINE LINK · ${expLabel(shareExp.key)}`);
-          return;
-        }
         if (kind === 'open') {
           cqLine.mintOpenLink(line.id);
           const updated = cqLine.getLine(line.id);
           const url = cqLine.buildGuestLink(updated);
-          showShareResult(url, 'OPEN GUEST LINK · HOST ADMITS');
+          showResultView(url, 'OPEN GUEST LINK · HOST ADMITS');
           return;
         }
         if (kind === 'onetime') {
-          const name = (prompt('Who is this link for? (their name)') || '').trim();
-          if (!name) return;
-          // Stash a placeholder participant entry so the one-time link binds
-          // to a real id; the recipient will appear under this name.
-          const guest = cqLine.addParticipant(line.id, { name, role: 'guest' });
-          const token = cqLine.mintOneTime(line.id, guest.id, {
-            expiresInMs: expMs,
-            singleUse: true,
-          });
-          const updated = cqLine.getLine(line.id);
-          const url = cqLine.buildOneTimeLink(updated, token);
-          showShareResult(url, `ONE-TIME · ${expLabel(shareExp.key)} · FOR ${name.toUpperCase()}`);
-          // Make the new participant a tile so we know to expect them.
-          if (!tilesById.has(guest.id)) buildTile(guest);
-          updateRoster();
+          otReset();
+          showShareView('onetime');
+          // Auto-focus name field so the host can start typing right away.
+          setTimeout(() => otName.focus(), 50);
         }
       });
     });
@@ -1173,53 +1336,162 @@
       });
     });
 
-    // ---------- Demo panel (only visible when ?demo=1) ----------
+    // ---------- Hamburger menu + Demo panel ----------
+    //
+    // The hamburger replaces what used to be a separate share button + demo
+    // toggle. It contains: Share link (normal mode), Active monitoring
+    // toggle (demo mode), Simulate panel (demo mode). Share buttons are
+    // hidden entirely in demo mode (no real share flow needed there).
 
-    const demoBtn = document.getElementById('demo-toggle');
+    const hbBtn   = document.getElementById('hamburger-btn');
+    const hbMenu  = document.getElementById('hamburger-menu');
+    const hmShare = document.getElementById('hm-share');
+    const hmMon   = document.getElementById('hm-monitoring');
+    const hmSim   = document.getElementById('hm-simulate');
+    const hmMonLabel = document.getElementById('hm-monitoring-label');
+
+    // Tailor menu contents to mode
+    if (isDemo) {
+      hmShare.style.display = 'none';   // no share in demo
+    } else {
+      hmMon.style.display = 'none';
+      hmSim.style.display = 'none';
+    }
+
+    const closeHamburger = () => {
+      hbMenu.classList.remove('is-open');
+      hbMenu.setAttribute('aria-hidden', 'true');
+    };
+    const openHamburger = () => {
+      hbMenu.classList.add('is-open');
+      hbMenu.setAttribute('aria-hidden', 'false');
+    };
+    hbBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hbMenu.classList.contains('is-open') ? closeHamburger() : openHamburger();
+    });
+    document.addEventListener('click', (e) => {
+      if (!hbMenu.classList.contains('is-open')) return;
+      if (e.target.closest('#hamburger-menu') || e.target.closest('#hamburger-btn')) return;
+      closeHamburger();
+    });
+    hmShare.addEventListener('click', () => { closeHamburger(); openShareSheet(); });
+
     const demoPanel = document.getElementById('demo-panel');
     if (!isDemo) {
-      demoBtn.remove();
       demoPanel.remove();
     } else {
-      demoBtn.style.display = '';
-      demoBtn.addEventListener('click', () => {
+      // In demo mode, hide bottom share button (top share is in the
+      // hamburger menu and we already hid it via display:none above).
+      const sb = document.getElementById('share-btn-bottom');
+      if (sb) sb.style.display = 'none';
+
+      hmSim.addEventListener('click', () => {
+        closeHamburger();
         demoPanel.classList.toggle('is-open');
       });
 
-      // Force "self" state — relies on the active-monitoring loop being on.
-      // Try-demo seeds the line with activeMonitoring=true so this works.
-      const forceSelf = (state, ms) => {
-        if (stopLiveness && stopLiveness.forceState) {
-          stopLiveness.forceState(state, ms);
+      // Active-monitoring toggle (demo only).
+      const refreshMonLabel = () => {
+        hmMonLabel.textContent = `Active monitoring · ${isActiveMonitoring ? 'ON' : 'OFF'}`;
+      };
+      const setMonitoring = (on) => {
+        isActiveMonitoring = !!on;
+        refreshMonLabel();
+        // Reflect in the mode-badge.
+        const badge = document.getElementById('mode-badge');
+        if (badge) {
+          if (isActiveMonitoring) {
+            if (!badge.parentNode) document.querySelector('.rail-meta').prepend(badge);
+            badge.textContent = 'MONITORED';
+            badge.classList.add('is-active');
+          } else if (badge.parentNode) {
+            badge.remove();
+          }
+        }
+        // Start or stop the continuous-liveness loop.
+        if (isActiveMonitoring) {
+          if (!stopLiveness && selfStream && selfVideo) {
+            myLocal.liveness = 'verifying';
+            setSelfPreviewState('verifying');
+            setPersistentStateBanner('verifying');
+            stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
+              refPhoto: isDemo ? null : me.photo,
+              tickMs: 1800,
+              cb: livenessCallback,
+            });
+          }
+          // Show the self-preview viewfinder when monitoring is on.
+          selfPreview.style.display = '';
+          selfToggle.style.display = '';
         } else {
-          // Fallback for entry-gated demo: directly set our own state so the
-          // tile/banner reflect it. Reverts after `ms`.
-          myLocal.liveness = state;
-          setSelfPreviewState(state);
-          setPersistentStateBanner(state);
-          setCallAudioSilenced(state === 'intruder');
+          if (stopLiveness) { stopLiveness(); stopLiveness = null; }
+          myLocal.liveness = 'verified';
+          setSelfPreviewState('verified');
+          setPersistentStateBanner('verified');
           publishMe();
-          setTimeout(() => {
-            myLocal.liveness = 'verified';
-            setSelfPreviewState('verified');
-            setPersistentStateBanner('verified');
-            setCallAudioSilenced(false);
-            publishMe();
-          }, ms);
+          // Hide the self-preview when monitoring is off.
+          selfPreview.style.display = 'none';
+          selfToggle.style.display = 'none';
         }
       };
-      document.getElementById('sim-away').addEventListener('click', () => forceSelf('away', 6000));
-      document.getElementById('sim-intruder').addEventListener('click', () => forceSelf('intruder', 6000));
-      document.getElementById('sim-verified').addEventListener('click', () => forceSelf('verified', 2000));
+      refreshMonLabel();
+      hmMon.addEventListener('click', () => {
+        setMonitoring(!isActiveMonitoring);
+      });
 
-      // Peer simulators: drive a random non-self tile through a state for a
-      // few seconds. This bypasses BroadcastChannel and just paints the tile
-      // locally so the demo runs cleanly in a single tab.
+      // Force "self" state. Each simulate button is now a TOGGLE: tap once
+      // to force the state, tap again to release. Tap "Back in frame ·
+      // verified" any time to reset to verified for 2s. Multiple buttons
+      // can be tapped in sequence — most-recent wins.
+      let forcedState = null;  // 'away' | 'intruder' | null
+      const setSimButtonState = () => {
+        document.getElementById('sim-away').classList.toggle('is-on', forcedState === 'away');
+        document.getElementById('sim-intruder').classList.toggle('is-on', forcedState === 'intruder');
+      };
+      const applyForced = (state) => {
+        if (stopLiveness && stopLiveness.forceState) {
+          stopLiveness.forceState(state, state === 'verified' ? 2000 : 24 * 3600 * 1000);
+        }
+        myLocal.liveness = state;
+        setSelfPreviewState(state);
+        setPersistentStateBanner(state);
+        setCallAudioSilenced(state === 'intruder');
+        publishMe();
+      };
+      const releaseForced = () => {
+        forcedState = null;
+        setSimButtonState();
+        if (stopLiveness && stopLiveness.forceState) {
+          stopLiveness.forceState('verified', 50);  // tiny verified pulse, real detection takes over
+        }
+        myLocal.liveness = 'verified';
+        setSelfPreviewState('verified');
+        setPersistentStateBanner('verified');
+        setCallAudioSilenced(false);
+        publishMe();
+      };
+      const toggleForce = (state) => {
+        if (forcedState === state) {
+          releaseForced();
+        } else {
+          forcedState = state;
+          setSimButtonState();
+          applyForced(state);
+        }
+      };
+      document.getElementById('sim-away').addEventListener('click', () => toggleForce('away'));
+      document.getElementById('sim-intruder').addEventListener('click', () => toggleForce('intruder'));
+      document.getElementById('sim-verified').addEventListener('click', () => releaseForced());
+
+      // Peer simulators. The "intruder" peer is also a toggle now; the
+      // others (speak / hand) are short pulses.
       const otherPids = () => [...tilesById.keys()].filter(pid => pid !== me.id);
       const pickPeer = () => {
         const ids = otherPids();
         return ids.length ? ids[Math.floor(Math.random() * ids.length)] : null;
       };
+      const peerForcedIntruders = new Set();
       document.getElementById('sim-peer-speak').addEventListener('click', () => {
         const pid = pickPeer(); if (!pid) return;
         setTileState(pid, 'verified', { speaking: true, muted: false });
@@ -1231,11 +1503,23 @@
         setTimeout(() => setTileState(pid, 'verified', { handRaised: false }), 4000);
       });
       document.getElementById('sim-peer-intruder').addEventListener('click', () => {
+        // Toggle: if any peer is currently flagged, clear them all. Else
+        // flag a random peer.
+        if (peerForcedIntruders.size) {
+          for (const pid of peerForcedIntruders) {
+            setTileState(pid, 'verified', {});
+            setPeerStateBanner(pid, null);
+          }
+          peerForcedIntruders.clear();
+          document.getElementById('sim-peer-intruder').classList.remove('is-on');
+          return;
+        }
         const pid = pickPeer(); if (!pid) return;
         setTileState(pid, 'intruder', {});
+        peerForcedIntruders.add(pid);
         const p = line.participants.find(x => x.id === pid);
-        if (p) banner(`${p.name.split(' ')[0]} has an intruder — they can't hear the call`, 'danger');
-        setTimeout(() => setTileState(pid, 'verified', {}), 6000);
+        setPeerStateBanner(pid, `${p ? p.name.split(' ')[0] : 'Peer'} has an intruder · their call audio is silenced`);
+        document.getElementById('sim-peer-intruder').classList.add('is-on');
       });
     }
 

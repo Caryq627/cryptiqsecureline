@@ -269,27 +269,39 @@
         `</svg>`
       );
 
+      // Step 1: capture a reference photo of the user (no match yet —
+      // refPhoto is null so the gate just confirms a live face is present).
       cqFaceGate.verify({
         refPhoto: null,
         headline: 'Capture your face',
-        sub: 'Quick face capture so the demo can verify identity during the call.',
-        cancelText: 'Skip demo',
-        onVerified: (gate) => {
-          const yourPhoto = (gate && gate.frame) ? gate.frame : svgPlaceholder('YOU', '#0f6660');
-          // Active-monitoring on so the simulate panel's away / intruder /
-          // verified buttons drive a real liveness loop using YOUR face.
-          const line = cqLine.createLine('Sample call · demo', { activeMonitoring: true });
-          const host = cqLine.addParticipant(line.id, { name: 'You',  photo: yourPhoto });
-          cqLine.setHost(line.id, host.id);
-          cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svgPlaceholder('JC','#3d4a6b') });
-          cqLine.addParticipant(line.id, { name: 'Marcus Reid',     photo: svgPlaceholder('MR','#6b2f4a') });
-          cqLine.addParticipant(line.id, { name: 'Priya Natarajan', photo: svgPlaceholder('PN','#4a6b2f') });
-          // Stamp gatePassedAt so call.html accepts the demo entry.
-          cqLine.setSession({ lineId: line.id, participantId: host.id, gatePassedAt: Date.now() });
-          const callUrl = `call.html?line=${encodeURIComponent(line.id)}&me=${encodeURIComponent(host.id)}&demo=1`;
-          cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+        sub: 'Step 1 of 2 — this becomes the reference your live face will need to match.',
+        cancelText: 'Cancel demo',
+        onVerified: (capture) => {
+          const refPhoto = (capture && capture.frame) ? capture.frame : svgPlaceholder('YOU', '#0f6660');
+          // Step 2: verify a live capture matches the reference we just took.
+          cqFaceGate.verify({
+            refPhoto,
+            headline: 'Now show it matches',
+            sub: 'Step 2 of 2 — your live face must match the reference.',
+            cancelText: 'Cancel demo',
+            onVerified: () => {
+              // Step 3: drop into the call. Active monitoring is OFF by
+              // default; the in-call hamburger menu has a toggle to turn
+              // it on so users can demo continuous matching.
+              const line = cqLine.createLine('Sample call · demo', { activeMonitoring: false });
+              const host = cqLine.addParticipant(line.id, { name: 'You',  photo: refPhoto });
+              cqLine.setHost(line.id, host.id);
+              cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svgPlaceholder('JC','#3d4a6b') });
+              cqLine.addParticipant(line.id, { name: 'Marcus Reid',     photo: svgPlaceholder('MR','#6b2f4a') });
+              cqLine.addParticipant(line.id, { name: 'Priya Natarajan', photo: svgPlaceholder('PN','#4a6b2f') });
+              cqLine.setSession({ lineId: line.id, participantId: host.id, gatePassedAt: Date.now() });
+              const callUrl = `call.html?line=${encodeURIComponent(line.id)}&me=${encodeURIComponent(host.id)}&demo=1`;
+              cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+            },
+            onCancel: () => { /* user dropped at step 2 */ },
+          });
         },
-        onCancel: () => { /* user backed out — stay on landing */ },
+        onCancel: () => { /* user dropped at step 1 */ },
       });
     });
   </script>
