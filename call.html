@@ -264,9 +264,34 @@
       throw new Error('no line');
     }
 
+    // Fresh-gate-pass requirement. Without this, sessionStorage alone
+    // would let anyone who reaches call.html "enter" — including users
+    // who pulled-to-refresh mid-gate without ever passing it. We require
+    // a gatePassedAt stamp (set by every legit gate path) less than
+    // GATE_FRESH_MS old. The heartbeat below refreshes this every 2.5s
+    // while the user is on the page so mid-call reloads stay valid.
+    const GATE_FRESH_MS = 60 * 1000; // 60s grace window for entry
+    const sessionAtLoad = cqLine.getSession();
+    const gateStampValid = !!(
+      sessionAtLoad &&
+      sessionAtLoad.lineId === line.id &&
+      sessionAtLoad.gatePassedAt &&
+      (Date.now() - sessionAtLoad.gatePassedAt) < GATE_FRESH_MS
+    );
+    if (!gateStampValid) {
+      document.body.innerHTML =
+        '<div style="padding:48px 20px; text-align:center; color:var(--fg-muted); max-width:420px; margin:0 auto;">' +
+        '<div style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.2em; color:var(--accent); margin-bottom:14px;">VERIFICATION REQUIRED</div>' +
+        '<div style="font-size:18px; font-weight:600; color:var(--fg); margin-bottom:8px;">Re-enter via your invite link</div>' +
+        '<div style="font-size:13px; line-height:1.5; margin-bottom:22px;">Identity verification expired. Use your invite link to re-verify before re-joining the call.</div>' +
+        '<a class="btn btn-ghost" href="/">← Home</a>' +
+        '</div>';
+      throw new Error('stale gate stamp');
+    }
+
     let me = null;
     {
-      const s = cqLine.getSession();
+      const s = sessionAtLoad;
       const sessionPid = (s && s.lineId === line.id) ? s.participantId : null;
       const pickPid = meParam || sessionPid;
       me = line.participants.find(p => p.id === pickPid) || line.participants[0];
@@ -274,7 +299,9 @@
         document.body.innerHTML = '<div style="padding:40px; text-align:center; color:var(--fg-muted);">No attendees enrolled on this line yet.<br><br><a class="btn btn-ghost" href="/">← Home</a></div>';
         throw new Error('no me');
       }
+      // Preserve gatePassedAt; refresh enteredAt only when missing.
       cqLine.setSession({
+        ...s,
         lineId: line.id,
         participantId: me.id,
         enteredAt: (s && s.enteredAt) || Date.now(),
@@ -650,10 +677,19 @@
     });
 
     // Periodic heartbeat + away-sweeper. Also pings the line's live-presence
-    // record so other tabs (join.html waiting room) know someone's in here.
+    // record so other tabs (join.html waiting room) know someone's in here,
+    // and refreshes gatePassedAt so a mid-call reload still validates.
     setInterval(() => {
       publishMe();
       cqLine.pingInCall(line.id, me.id);
+      // Bump session's gatePassedAt while user is actively in the call.
+      // Window resets to 60s every 2.5s, so as long as they're connected
+      // they can reload freely. Once they leave (or session ends), it
+      // expires and re-verification is required.
+      const sess = cqLine.getSession();
+      if (sess && sess.lineId === line.id) {
+        cqLine.setSession({ ...sess, gatePassedAt: Date.now() });
+      }
       const cutoff = Date.now() - 6000;
       tilesById.forEach((t, pid) => {
         if (pid === me.id) return;
@@ -701,6 +737,9 @@
 
     // Run-once cleanup so multiple leave triggers (button + pagehide +
     // beforeunload) don't double-close the stream or double-publish.
+    // NOTE: does NOT clearSession — that runs only on explicit leaveCall.
+    // Otherwise a reload would lose the session and force re-verification,
+    // even though the user is intentionally staying.
     let cleanedUp = false;
     const cleanupCallState = () => {
       if (cleanedUp) return;
@@ -710,11 +749,14 @@
       try { if (stopLiveness) stopLiveness(); } catch {}
       try { if (stopVad) stopVad(); } catch {}
       try { cqFacetec.closeStream(selfStream); } catch {}
-      try { cqLine.clearSession(); } catch {}
     };
 
     const leaveCall = () => {
       cleanupCallState();
+      // Explicit leave: clear the session so the user has to re-verify
+      // before re-entering. Pure pagehide doesn't do this — only an
+      // intentional leave button press.
+      try { cqLine.clearSession(); } catch {}
       // Append ?skipIntro=1 so the home page doesn't replay its 2.8s
       // intro on top of our 2.4s disconnect animation. Use location.replace
       // so the back-button doesn't bounce the user into a torn-down call

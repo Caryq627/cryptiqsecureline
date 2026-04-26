@@ -284,7 +284,8 @@
           cqLine.addParticipant(line.id, { name: 'Jane Chen',       photo: svgPlaceholder('JC','#3d4a6b') });
           cqLine.addParticipant(line.id, { name: 'Marcus Reid',     photo: svgPlaceholder('MR','#6b2f4a') });
           cqLine.addParticipant(line.id, { name: 'Priya Natarajan', photo: svgPlaceholder('PN','#4a6b2f') });
-          cqLine.setSession({ lineId: line.id, participantId: host.id });
+          // Stamp gatePassedAt so call.html accepts the demo entry.
+          cqLine.setSession({ lineId: line.id, participantId: host.id, gatePassedAt: Date.now() });
           const callUrl = `call.html?line=${encodeURIComponent(line.id)}&me=${encodeURIComponent(host.id)}&demo=1`;
           cqConnecting.show({ onDone: () => { location.href = callUrl; } });
         },

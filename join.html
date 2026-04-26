@@ -367,11 +367,15 @@
           return;
         }
       }
+      // Stamp gatePassedAt so call.html accepts entry. Without this stamp,
+      // call.html refuses to render — that's how we close the pull-to-
+      // refresh bypass (no proof of recent gate pass = no entry).
       cqLine.setSession({
         lineId,
         participantId: gatePass.participantId,
         entry: tokenKind,
         enteredAt: Date.now(),
+        gatePassedAt: Date.now(),
       });
       const callUrl = cqLine.buildCallLink(line, gatePass.participantId);
       el.go.disabled = true;

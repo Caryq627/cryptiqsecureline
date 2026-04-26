@@ -12,11 +12,12 @@
     deviceKey:    null,
     liveness2DPath: '/liveness-2d',
     match2DPath:    '/match-2d-2d',
-    // FaceTec matchLevel scale: 0 (clearly different) … 9-10 (clearly same).
-    // Anything below 6 is unreliable for identity verification — at 3 we
-    // were letting moderately similar faces through. 6 is the production
-    // threshold FaceTec recommends for 1:1 identity matching.
-    minMatchLevel: 6,
+    // matchLevel scale: 0 (clearly different) … 9-10 (clearly same).
+    // 5 = "medium-security 1:1" — strict enough that visibly different
+    // faces don't pass, lenient enough that the same face under different
+    // lighting / compression / angle still clears. 6+ is too strict for a
+    // single-frame REST roundtrip with our brightness/contrast pre-filter.
+    minMatchLevel: 5,
     tickMs:        1800,
     simMode:       true,
     // When true, every /liveness-2d and /match-2d-2d response is logged so

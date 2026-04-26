@@ -1009,6 +1009,13 @@
           headline:  `Verify it's you, ${firstName}`,
           sub:       'Live face check before entering your own line.',
           onVerified: () => {
+            // Stamp gatePassedAt — call.html requires a fresh stamp.
+            cqLine.setSession({
+              lineId: line.id,
+              participantId: mePid,
+              host: true,
+              gatePassedAt: Date.now(),
+            });
             cqConnecting.show({ onDone: () => { location.href = callUrl; } });
           },
           onCancel: () => { el.nextBtn.disabled = false; },

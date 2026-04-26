@@ -369,7 +369,7 @@
       if (msg.type === 'guest-admitted' && msg.participantId) {
         // Proceed into the call via the connecting animation.
         const freshLine = cqLine.getLine(lineId);
-        cqLine.setSession({ lineId, participantId: msg.participantId, entry: 'guest', enteredAt: Date.now() });
+        cqLine.setSession({ lineId, participantId: msg.participantId, entry: 'guest', enteredAt: Date.now(), gatePassedAt: Date.now() });
         const callUrl = cqLine.buildCallLink(freshLine, msg.participantId);
         cqConnecting.show({ onDone: () => { location.href = callUrl; } });
       } else if (msg.type === 'guest-denied') {
@@ -385,7 +385,7 @@
       if (entry.status === 'admitted') {
         const p = (cqLine.getLine(lineId).participants || []).find(x => x.id === myPendingId);
         if (p) {
-          cqLine.setSession({ lineId, participantId: p.id, entry: 'guest', enteredAt: Date.now() });
+          cqLine.setSession({ lineId, participantId: p.id, entry: 'guest', enteredAt: Date.now(), gatePassedAt: Date.now() });
           const callUrl = cqLine.buildCallLink(cqLine.getLine(lineId), p.id);
           cqConnecting.show({ onDone: () => { location.href = callUrl; } });
           myPendingId = null;
