@@ -51,7 +51,7 @@
       <div class="rail-meta">
         <span class="live-indicator"><span class="dot"></span>LIVE · VOICE</span>
         <span id="roster-count">0 verified</span>
-        <span id="provider-badge" class="provider-badge is-live" title="Real FaceTec REST endpoint"><span class="dot"></span>FACETEC LIVE</span>
+        <span id="provider-badge" class="provider-badge is-live" title="Live identity verification"><span class="dot"></span>LIVE VERIFY</span>
         <span id="mode-badge" class="mode-badge" title="Monitoring mode">ENTRY-GATED</span>
         <button id="share-btn-top" class="btn-icon btn-icon-sm" type="button" title="Share a link to this line" aria-label="Share link">
           <span data-icon="link"></span>
@@ -205,7 +205,7 @@
   <script src="js/theme.js"></script>
   <script src="js/secure-line.js"></script>
   <script>
-    // Live FaceTec configuration. Must be set before facetec-bridge.js loads.
+    // Live verification provider config. Must be set before facetec-bridge.js loads.
     window.CQ_FACETEC = {
       server:    'https://54.211.82.159.sslip.io',
       deviceKey: 'dNcawGQtDA4vGqAYgR2lUTmlmAivtfNT'
@@ -257,9 +257,15 @@
     const isActiveMonitoring = !!line.activeMonitoring;
     {
       const badge = document.getElementById('mode-badge');
-      badge.textContent = isActiveMonitoring ? 'ACTIVE MONITORING' : 'VERIFIED · ENTRY-GATED';
-      badge.classList.toggle('is-active', isActiveMonitoring);
-      badge.classList.toggle('is-entry-gated', !isActiveMonitoring);
+      // Entry-gated mode: tile-level VERIFIED pills are enough — no extra
+      // header chrome. Only surface a badge when active monitoring is on,
+      // and keep it short.
+      if (isActiveMonitoring) {
+        badge.textContent = 'MONITORED';
+        badge.classList.add('is-active');
+      } else {
+        badge.remove();
+      }
     }
     // Entry-gated calls run on a light background — every face was verified
     // at the door, so the call itself is "approved territory" and reads
@@ -268,17 +274,17 @@
     if (!isActiveMonitoring) {
       document.body.classList.add('theme-light');
     }
-    // Reflect real-vs-sim FaceTec on the in-call provider pill.
+    // Toggle live-vs-sim on the verification pill.
     {
       const pb = document.getElementById('provider-badge');
       if (pb) {
         if (cqFacetec.simMode) {
           pb.classList.remove('is-live');
           pb.classList.add('is-sim');
-          pb.title = 'Simulation mode — no real FaceTec server configured';
+          pb.title = 'Simulation mode';
           pb.lastChild.textContent = 'SIMULATION';
         } else {
-          pb.title = `Real FaceTec REST · min match level ${cqFacetec.minMatchLevel}/9`;
+          pb.title = `Live identity verification · min match ${cqFacetec.minMatchLevel}/9`;
         }
       }
     }

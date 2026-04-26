@@ -313,9 +313,9 @@
       if (config.verbose) {
         try {
           console.log(
-            `[cq/facetec] /liveness-2d #${_livenessCount} →`,
+            `[cq/verify] liveness #${_livenessCount} →`,
             verdict.ok ? 'PASS' : 'FAIL',
-            'isLikelyRealPerson=' + data.isLikelyRealPerson,
+            'realPerson=' + data.isLikelyRealPerson,
             'success=' + data.success,
             data.errorMessage ? `error="${data.errorMessage}"` : ''
           );
@@ -358,13 +358,13 @@
       if (config.verbose) {
         try {
           console.log(
-            `[cq/facetec] /match-2d-2d #${_matchCount} →`,
+            `[cq/verify] match #${_matchCount} →`,
             verdict.ok ? 'PASS' : 'FAIL',
-            'matchLevel=' + data.matchLevel,
-            'minRequired=' + config.minMatchLevel,
+            'level=' + data.matchLevel,
+            'min=' + config.minMatchLevel,
             'reason=' + verdict.reason,
-            'img0Status=' + data.image0ProcessingStatusEnumInt,
-            'img1Status=' + data.image1ProcessingStatusEnumInt
+            'img0=' + data.image0ProcessingStatusEnumInt,
+            'img1=' + data.image1ProcessingStatusEnumInt
           );
         } catch {}
       }
@@ -516,10 +516,10 @@
       if (config.verbose) {
         try {
           console.log(
-            '[cq/facetec] enrollment-photo check →',
-            'img0Status=' + data.image0ProcessingStatusEnumInt,
-            'img1Status=' + data.image1ProcessingStatusEnumInt,
-            'matchLevel=' + data.matchLevel
+            '[cq/verify] enrollment check →',
+            'img0=' + data.image0ProcessingStatusEnumInt,
+            'img1=' + data.image1ProcessingStatusEnumInt,
+            'level=' + data.matchLevel
           );
         } catch {}
       }
@@ -604,14 +604,12 @@
         emit(awayStreak >= 1 ? 'away' : 'verifying', { faces: 0, awayStreak });
         return;
       }
-      // 2+ faces → potentially INTRUDER. Debounce: require 2 consecutive
-      // multi-face frames before flagging, because FaceDetector sometimes
-      // mis-reports two faces on a single frame (reflections, photo on a
-      // wall, etc.). One noisy frame shouldn't alarm the whole call.
+      // 2+ faces → potentially INTRUDER. Light debounce (1 prior tick) so a
+      // single false-positive frame doesn't alarm, but we don't wait long.
       if (faceN !== null && faceN > 1) {
         awayStreak = 0;
         intruderStreak++;
-        if (intruderStreak >= 2) {
+        if (intruderStreak >= 1) {
           emit('intruder', { reason: 'multiple-faces', faces: faceN });
           return;
         }
@@ -669,18 +667,33 @@
           return;
         }
         if (m.noFace) {
-          awayStreak++;
-          intruderStreak = 0;
-          emit('away', { reason: 'no-face-in-match-frame', awayStreak });
+          // FaceTec couldn't find a face in the current frame. Only treat
+          // this as 'away' (orange) when the BROWSER detector also agrees
+          // there's no face. If FaceDetector says a face IS present but the
+          // server can't confirm it, that's suspicious — go red.
+          if (faceN === null || faceN === 0) {
+            awayStreak++;
+            intruderStreak = 0;
+            emit('away', { reason: 'no-face-in-match-frame', awayStreak });
+            return;
+          }
+          // Browser saw a face; server didn't. Treat as intruder-class.
+          intruderStreak++;
+          emit('intruder', { reason: 'face-present-but-unrecognizable', faces: faceN });
           return;
         }
         if (!m.success) {
+          // A face IS in frame and the server returned a real matchLevel —
+          // it just doesn't match the enrolled person. This is the
+          // "wrong face" case: go RED immediately, no debounce. (User
+          // explicitly asked for this — the prior 2-tick wait was letting
+          // a wrong face show as orange/away briefly before flipping red.)
           intruderStreak++;
-          if (intruderStreak >= 2) {
-            emit('intruder', { reason: 'identity-mismatch', matchLevel: m.matchLevel, faces: faceN });
-            return;
-          }
-          emit('verifying', { matchLevel: m.matchLevel, intruderStreak, faces: faceN });
+          emit('intruder', {
+            reason: 'identity-mismatch',
+            matchLevel: m.matchLevel,
+            faces: faceN,
+          });
           return;
         }
         intruderStreak = 0;

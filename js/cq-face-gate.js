@@ -31,8 +31,8 @@
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     const provider = (root.cqFacetec && !root.cqFacetec.simMode)
-      ? `<span class="provider-badge is-live" title="Live FaceTec REST endpoint"><span class="dot"></span>FACETEC LIVE · MIN MATCH ${root.cqFacetec.minMatchLevel}</span>`
-      : `<span class="provider-badge is-sim" title="Simulation mode — no real FaceTec server configured"><span class="dot"></span>SIMULATION MODE</span>`;
+      ? `<span class="provider-badge is-live" title="Live identity verification"><span class="dot"></span>LIVE VERIFY · MIN ${root.cqFacetec.minMatchLevel}/9</span>`
+      : `<span class="provider-badge is-sim" title="Simulation mode — no live verification server configured"><span class="dot"></span>SIMULATION</span>`;
 
     overlay.innerHTML =
       `<div class="face-gate-card">
@@ -132,7 +132,7 @@
               if (typeof onVerified === 'function') onVerified();
             }, 420);
           } else if (r.refUnreadable) {
-            // Hard fail: enrolled photo can't be processed by FaceTec.
+            // Hard fail: enrolled photo can't be processed for matching.
             // Without re-enrolling, the user can never pass — don't lie.
             statusEl.textContent = 'ENROLLED PHOTO UNUSABLE — RE-ENROLL';
             statusEl.className = 'viewfinder-status is-denied';

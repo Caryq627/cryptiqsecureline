@@ -189,10 +189,13 @@ button { font-family: inherit; }
 .top-rail .rail-meta {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 11px;
 }
+.top-rail .rail-meta > * { flex-shrink: 0; }
 
 .top-rail .dot {
   width: 6px; height: 6px; border-radius: 50%;
@@ -255,6 +258,17 @@ button { font-family: inherit; }
 
 .card.wide { max-width: 620px; }
 .card.slim { max-width: 380px; }
+
+/* Landing-page hero card: asymmetric corner radii for a more distinctive
+   silhouette. Top-right and bottom-left swell out, while the L-shaped
+   accent brackets stay tucked into the small (top-left / bottom-right)
+   corners — the curves and the brackets play off each other. */
+.card.is-hero {
+  border-radius: 4px 28px 4px 28px;
+}
+@media (max-width: 640px) {
+  .card.is-hero { border-radius: 3px 22px 3px 22px; }
+}
 
 .card-eyebrow {
   font-family: var(--font-mono);
@@ -872,12 +886,26 @@ input, textarea, select {
 .call-header .rail-meta {
   display: inline-flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
+  flex-wrap: nowrap;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--fg-muted);
+  white-space: nowrap;
+}
+/* Tight spacing, single line, no overflow. Every chip in the rail-meta
+   shrinks gracefully on small screens; no element overlaps another. */
+.call-header .rail-meta > * { flex-shrink: 0; }
+.call-header .rail-meta .provider-badge,
+.call-header .rail-meta .mode-badge {
+  margin: 0;
+  padding: 3px 8px;
+}
+.call-header .rail-meta .btn-icon-sm,
+.call-header .rail-meta .theme-toggle {
+  width: 28px; height: 28px;
 }
 .call-header .live-indicator {
   display: inline-flex;
@@ -1228,8 +1256,8 @@ input, textarea, select {
 }
 .face-gate-card .btn-ghost { margin-top: 6px; }
 
-/* Tiny FACETEC LIVE / SIMULATION pill. Tells the user at a glance whether
-   they're hitting the real FaceTec REST endpoint or running in sim mode. */
+/* Tiny LIVE VERIFY / SIMULATION pill. Tells the user at a glance whether
+   the live verification server is configured. */
 .provider-badge {
   display: inline-flex;
   align-items: center;
@@ -1313,37 +1341,48 @@ input, textarea, select {
   .tile .hand-flag svg { width: 14px; height: 14px; }
   .card { padding: 26px 20px; }
   .card h1 { font-size: 24px; }
-  .top-rail { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
+  .top-rail { padding: 12px 14px; flex-wrap: nowrap; gap: 8px; }
   .top-rail .brand { gap: 8px; }
   .top-rail .brand .mark { width: 20px; height: 20px; }
   .top-rail .brand .wordmark .cq-wordmark-img { width: 62px; height: 24px; }
   .top-rail .brand .wordmark .sml { font-size: 8px; }
 
-  /* Call header: stack name / meta onto two rows, keep tiny. */
+  /* Call header: single-row, no wrap. Anything that doesn't fit gets
+     hidden so we never overlap or break layout. */
   .call-header {
-    padding: 10px 12px;
-    flex-wrap: wrap;
-    row-gap: 6px;
+    padding: 8px 10px;
+    flex-wrap: nowrap;
+    column-gap: 8px;
   }
-  .call-header .line-id { gap: 10px; min-width: 0; flex: 1 1 auto; }
+  .call-header .line-id { gap: 8px; min-width: 0; flex: 1 1 auto; }
   .call-header .line-id .mark { width: 20px; height: 20px; }
   .call-header .line-id .name {
     font-size: 13px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 64vw;
+    max-width: 40vw;
   }
   .call-header .line-id .meta { font-size: 9.5px; }
   .call-header .rail-meta {
-    gap: 10px;
+    gap: 6px;
     font-size: 10px;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
+    flex-shrink: 0;
   }
+  /* Trim aggressively on mobile so only icons + the pulsing live dot remain
+     visible. No labels, no overlap, no second row. */
   .call-header .rail-meta .live-indicator span:not(.dot) { display: none; }
-  .call-header .rail-meta #mode-tag { display: none; }
+  .call-header .rail-meta #roster-count { display: none; }
+  .call-header .rail-meta .provider-badge { padding: 0; border: none; background: transparent; box-shadow: none; }
+  .call-header .rail-meta .provider-badge > :not(.dot) { display: none; }
+  .call-header .rail-meta .mode-badge     { font-size: 8.5px; padding: 2px 6px; letter-spacing: 0.08em; }
+  .call-header .rail-meta .btn-icon-sm,
+  .call-header .rail-meta .theme-toggle { width: 26px; height: 26px; }
+  .call-header .rail-meta .btn-icon-sm svg,
+  .call-header .rail-meta .theme-toggle svg { width: 12px; height: 12px; }
   #demo-toggle .demo-label { display: none; }
-  #demo-toggle { padding: 6px 8px; }
+  #demo-toggle { padding: 4px 7px; font-size: 10px; }
   .call-controls { padding: 12px; gap: 10px; }
   .call-controls .btn-icon { width: 46px; height: 46px; }
   .call-controls .btn-icon svg { width: 18px; height: 18px; }
@@ -1972,45 +2011,55 @@ body.theme-light .share-opt { background: rgba(0,0,0,0.02); }
    so the view itself stays a clean circle. Theme-aware.
    ============================================================ */
 
+/* Anchored to the mini viewfinder: sits just above the preview circle's
+   top edge, aligned with its right side. Small (~26px) so it doesn't
+   compete with the call header. Stays close to the preview at every
+   breakpoint so it reads as part of that control group. */
 .self-preview-toggle {
   position: fixed;
-  top: 76px;
-  right: 20px;
-  width: 36px; height: 36px;
+  /* preview is at bottom: 92, height: 110 → its top is at bottom: 202.
+     toggle sits ~6px above the top of the preview, right-aligned. */
+  bottom: 208px;
+  right: 22px;
+  width: 26px; height: 26px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid var(--surface-border);
-  color: var(--fg);
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.92);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 22;
+  backdrop-filter: blur(4px);
   transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s;
   -webkit-tap-highlight-color: transparent;
 }
 .self-preview-toggle:hover {
-  background: rgba(255,255,255,0.10);
-  border-color: var(--accent-line);
+  background: rgba(0,0,0,0.78);
+  border-color: var(--accent);
   color: var(--accent);
 }
-.self-preview-toggle:active { transform: scale(0.94); }
-.self-preview-toggle svg { width: 16px; height: 16px; }
+.self-preview-toggle:active { transform: scale(0.92); }
+.self-preview-toggle svg { width: 13px; height: 13px; }
 
+/* Light-theme variant: light surface with darker icon, accent on hover. */
 body.theme-light .self-preview-toggle {
-  background: rgba(0,0,0,0.04);
-  border-color: var(--surface-border);
+  background: rgba(255,255,255,0.92);
+  border-color: rgba(0,0,0,0.10);
   color: var(--fg);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
 }
 body.theme-light .self-preview-toggle:hover {
-  background: rgba(20,138,127,0.12);
-  border-color: var(--accent-line);
+  background: #fff;
+  border-color: var(--accent);
   color: var(--accent);
 }
 
 @media (max-width: 640px) {
-  .self-preview-toggle { width: 32px; height: 32px; top: 64px; right: 12px; }
-  .self-preview-toggle svg { width: 14px; height: 14px; }
+  /* preview on mobile: bottom 84, height 82 → top at 166. */
+  .self-preview-toggle { width: 24px; height: 24px; bottom: 172px; right: 14px; }
+  .self-preview-toggle svg { width: 12px; height: 12px; }
 }
 
 /* Hidden state — snap instantly so the toggle feels responsive. */

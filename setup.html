@@ -612,10 +612,10 @@
       capFrame = null;
       cap.save.disabled = true;
 
-      // Server-side enrollment validation: confirms FaceTec can extract
-      // face features from the photo. Without this a non-face image (or
-      // a face too blurry/small to encode) silently passes setup and
-      // breaks identity matching for that participant.
+      // Server-side enrollment validation: confirms the verification engine
+      // can extract face features from the photo. Without this a non-face
+      // image (or a face too blurry/small to encode) silently passes setup
+      // and breaks identity matching for that participant.
       const verdict = await cqFacetec.verifyEnrollmentPhoto(resized);
       if (!verdict.ok) {
         const msg = verdict.reason === 'multiple-faces'
