@@ -302,6 +302,7 @@
   <script src="js/theme.js"></script>
   <script src="js/secure-line.js"></script>
   <script src="js/cq-cloud.js"></script>
+  <script src="js/cq-voice.js"></script>
   <script>
     // Live verification provider config. Must be set before facetec-bridge.js loads.
     window.CQ_FACETEC = {
@@ -540,6 +541,7 @@
     }
 
     let selfStream = null;
+    let voiceRoom = null;  // WebRTC mesh (cq-voice). Re-created on each startSelfCamera so the latest mic stream is the one that's transmitted.
     let stopLiveness = null;
     let stopVad = null;
 
@@ -603,6 +605,41 @@
         myLocal.speaking = speaking && !myLocal.muted && myLocal.liveness === 'verified';
         publishMe();
       });
+
+      // ---- WebRTC voice mesh ----
+      // Open peer connections to every other participant currently live
+      // in the call. Audio rides directly between browsers; the cloud
+      // only relays SDP+ICE during setup. Re-create on refresh-camera
+      // so the new mic stream is the one we transmit.
+      try { if (voiceRoom) voiceRoom.close(); } catch {}
+      voiceRoom = null;
+      if (window.cqVoice && selfStream) {
+        const peerPids = () => {
+          const fresh = cqLine.getLine(line.id);
+          if (!fresh) return [];
+          const live = fresh.live || {};
+          const now = Date.now();
+          const out = [];
+          for (const p of (fresh.participants || [])) {
+            if (p.id === me.id) continue;
+            const v = live[p.id];
+            if (!v) continue;
+            const ts = typeof v === 'object' ? v.ts : v;
+            if (now - ts < 12000) out.push(p.id);
+          }
+          return out;
+        };
+        try {
+          voiceRoom = cqVoice.createRoom({
+            lineId: line.id,
+            mePid: me.id,
+            localStream: selfStream,
+            peerPids,
+          });
+        } catch (e) {
+          console.warn('[call] cqVoice.createRoom failed', e);
+        }
+      }
 
       if (isActiveMonitoring) {
         // High-security mode: continuous liveness + identity-match each tick.
@@ -848,6 +885,7 @@
       try { cqLine.clearLivePresence(line.id, me.id); } catch {}
       try { if (stopLiveness) stopLiveness(); } catch {}
       try { if (stopVad) stopVad(); } catch {}
+      try { if (voiceRoom) voiceRoom.close(); voiceRoom = null; } catch {}
       try { cqFacetec.closeStream(selfStream); } catch {}
     };
 

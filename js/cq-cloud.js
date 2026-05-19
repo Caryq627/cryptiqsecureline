@@ -97,6 +97,18 @@
       body: { token },
     });
 
+  // WebRTC signaling — drops a message in the addressed peer's inbox
+  // and pulls everything new addressed to us. Used by js/cq-voice.js
+  // for SDP offer/answer + ICE candidate trickling between peers.
+  const signal = (lineId, payload) =>
+    req(`/api/line/${encodeURIComponent(lineId)}/signal`, {
+      method: 'POST',
+      body: payload,
+    });
+
+  const pullSignals = (lineId, pid, since) =>
+    req(`/api/line/${encodeURIComponent(lineId)}/signal/${encodeURIComponent(pid)}?since=${since || 0}`);
+
   // ping(lineId, participantId, state?) — heartbeat + tile state.
   // state is { state, muted, handRaised, speaking } so other devices
   // can render this participant's tile correctly. All fields optional;
@@ -184,6 +196,8 @@
     deny,
     consumeOneTime,
     ping,
+    signal,
+    pullSignals,
     startSync,
     mergeIntoLocal,
   };

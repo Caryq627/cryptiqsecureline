@@ -23,6 +23,15 @@ const PRESENCE_TTL_MS = 12 * 1000;
 
 const lines = new Map(); // id → { line, touchedAt }
 
+// WebRTC signaling — per-line inbox of offer/answer/ICE messages addressed
+// to specific participants. Each message has a monotonically increasing
+// `seq` so clients can long-poll with ?since=<seq> and never miss one.
+// Bounded by SIGNAL_TTL_MS — old messages drop off so a stuck client
+// can't blow the queue up.
+const signalInboxes = new Map(); // lineId → [{seq, from, to, type, data, ts}]
+let signalSeq = 0;
+const SIGNAL_TTL_MS = 30 * 1000;
+
 const touch = (id) => {
   const entry = lines.get(id);
   if (entry) entry.touchedAt = Date.now();
@@ -44,11 +53,15 @@ const randId = (len = 12) => {
   return out;
 };
 
-// Periodic TTL sweep — drops lines that haven't been touched in a day.
+// Periodic TTL sweep — drops lines that haven't been touched in a day,
+// along with their signal inboxes.
 setInterval(() => {
   const cutoff = Date.now() - LINE_TTL_MS;
   for (const [id, entry] of lines) {
-    if (entry.touchedAt < cutoff) lines.delete(id);
+    if (entry.touchedAt < cutoff) {
+      lines.delete(id);
+      signalInboxes.delete(id);
+    }
   }
 }, 60 * 60 * 1000);
 
@@ -208,6 +221,37 @@ app.post('/api/line/:id/ping', (req, res) => {
   };
   touch(req.params.id);
   res.json({ ok: true });
+});
+
+// ---------- WebRTC signaling ----------
+//
+// Each call participant POSTs SDP offer/answer + ICE candidates here
+// addressed to a specific peer. Peers long-poll GET with the seq of
+// the last message they saw and receive everything newer addressed to
+// them. The server doesn't interpret payloads — it just routes JSON.
+
+app.post('/api/line/:id/signal', (req, res) => {
+  const { from, to, type, data } = req.body || {};
+  if (!from || !to || !type) {
+    return res.status(400).json({ ok: false, reason: 'bad-signal' });
+  }
+  let inbox = signalInboxes.get(req.params.id);
+  if (!inbox) { inbox = []; signalInboxes.set(req.params.id, inbox); }
+  signalSeq++;
+  inbox.push({ seq: signalSeq, from, to, type, data, ts: Date.now() });
+  // Drop messages older than the TTL so the queue doesn't grow forever.
+  const cutoff = Date.now() - SIGNAL_TTL_MS;
+  while (inbox.length && inbox[0].ts < cutoff) inbox.shift();
+  touch(req.params.id);
+  res.json({ ok: true, seq: signalSeq });
+});
+
+app.get('/api/line/:id/signal/:pid', (req, res) => {
+  const since = parseInt(req.query.since || '0', 10) || 0;
+  const inbox = signalInboxes.get(req.params.id) || [];
+  const pid = req.params.pid;
+  const mine = inbox.filter(m => m.to === pid && m.seq > since);
+  res.json({ ok: true, signals: mine });
 });
 
 // ---------- merge helper ----------
