@@ -1,0 +1,18 @@
+{
+  "name": "cryptiq-secure-line-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-device line-state API for Cryptiq Secure Line",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}

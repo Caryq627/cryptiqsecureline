@@ -243,14 +243,11 @@
     saveLine(line);
   };
 
-  const buildGuestLink = (line) => {
-    const url = new URL('guest.html', location.href);
-    url.searchParams.set('line', line.id);
-    url.searchParams.set('g', line.openToken);
-    // Embed line snapshot so the recipient hydrates locally before submit.
-    url.searchParams.set('d', encodePayload(serializeLineForLink(line)));
-    return url.toString();
-  };
+  const buildGuestLink = (line) => buildLinkUrl(
+    'guest.html',
+    [['line', line.id], ['g', line.openToken]],
+    serializeLineForLink(line, { kind: 'guest' }),
+  );
 
   // Guest submits name + photo. Creates a pending record on the line and
   // broadcasts a request so any host tab can react.
@@ -324,32 +321,80 @@
   // Lines live in localStorage on the host's device. For cross-device link
   // sharing (text the link to another phone) the recipient's browser has
   // no record of the line. We embed a stripped-down snapshot of the line
-  // in every link as ?d=<base64-json>; on the receiving end we hydrate
+  // in every link as #d=<base64-json>; on the receiving end we hydrate
   // localStorage from that snapshot if the line isn't already there.
   //
-  // We strip photos because data-URLs are too big for a URL (~30-100KB
-  // each, vs ~2-8KB practical URL limit). Cross-device users without
-  // photos get liveness-only entry; we capture their gate-passing frame
-  // and store it as their photo so active-monitoring still works after.
+  // The payload sits in the URL HASH (after #) — not the query string —
+  // so the visible part of the URL stays clean. Hashes are also never
+  // sent to servers, which is a privacy bonus.
+  //
+  // We strip photos for participants because data-URLs are too big for a
+  // URL (~30-100KB each, vs ~2-8KB practical URL limit). Cross-device
+  // users without photos get liveness-only entry; we capture their
+  // gate-passing frame as their photo so active-monitoring still works.
+  //
+  // Schema v2 uses single-letter keys + only includes the ONE oneTimeToken
+  // the link actually carries (not the whole token map), so a typical
+  // link payload is a few hundred chars instead of several KB.
 
-  const serializeLineForLink = (line) => ({
-    v: 1,
-    id: line.id,
-    name: line.name,
-    sharedToken: line.sharedToken,
-    sharedExpiresAt: line.sharedExpiresAt || null,
-    openToken: line.openToken || null,
-    activeMonitoring: !!line.activeMonitoring,
-    createdBy: line.createdBy || null,
-    createdAt: line.createdAt,
-    participants: (line.participants || []).map(p => ({
-      id: p.id,
-      name: p.name,
-      role: p.role,
-      enrolledAt: p.enrolledAt,
-      // photo intentionally omitted — too large for URL
-    })),
-    oneTimeTokens: line.oneTimeTokens || {},
+  // Build a compact, single-letter-key snapshot of the line.
+  //
+  // opts.kind  — 'shared' | 'one-time' | 'guest' | undefined
+  //              Controls which top-level tokens are embedded. The recipient
+  //              page only validates one of {sharedToken, openToken, oneTime
+  //              token}, so we ship just the one this link is for.
+  // opts.tokenId — when 'one-time', the exact token entry to embed (so the
+  //                rest of the host's token map stays off the wire).
+  const serializeLineForLink = (line, opts = {}) => {
+    const kind = opts.kind || 'shared';
+    const out = {
+      v: 2,
+      i: line.id,
+      n: line.name,
+      c: line.createdAt,
+    };
+    if (line.createdBy) out.b = line.createdBy;
+    if (line.activeMonitoring) out.a = 1;
+
+    if (kind === 'shared') {
+      if (line.sharedToken) out.s = line.sharedToken;
+      if (line.sharedExpiresAt) out.sx = line.sharedExpiresAt;
+    } else if (kind === 'guest') {
+      if (line.openToken) out.o = line.openToken;
+    } else if (kind === 'one-time' && opts.tokenId) {
+      const t = (line.oneTimeTokens || {})[opts.tokenId];
+      if (t) out.t = { [opts.tokenId]: compactToken(t) };
+    }
+
+    // Participants: array-of-arrays [id, name, role, enrolledAt] — no photos.
+    out.p = (line.participants || []).map(p => [
+      p.id, p.name, p.role || '', p.enrolledAt || 0,
+    ]);
+    return out;
+  };
+
+  const compactToken = (t) => {
+    const o = { c: t.createdAt };
+    if (t.participantId) o.p = t.participantId;
+    if (t.name) o.n = t.name;
+    if (t.photo) o.f = t.photo;
+    if (t.pending) o.e = 1;
+    if (t.expiresAt) o.x = t.expiresAt;
+    if (t.singleUse) o.s = 1;
+    if (t.usedAt) o.u = t.usedAt;
+    return o;
+  };
+
+  const inflateToken = (o) => ({
+    participantId: o.p || null,
+    name: o.n || null,
+    photo: o.f || null,
+    pending: !!o.e,
+    expiresAt: o.x || null,
+    singleUse: !!o.s,
+    usedAt: o.u || null,
+    usedCount: 0,
+    createdAt: o.c || Date.now(),
   });
 
   // base64-url (RFC 4648 §5) — URL-safe, no padding.
@@ -369,25 +414,86 @@
     } catch { return null; }
   };
 
-  // Recipient-side: take a ?d= payload and store the line locally so
-  // every cqLine.* helper that reads from localStorage just works.
-  // If the line already exists locally (host's own device), MERGE instead
-  // of overwrite — preserve any photos we have and accept any newly-minted
-  // tokens or participants from the URL.
+  // Inflate a compact (v2) snapshot back into the full line shape the rest
+  // of the app expects. Accepts legacy (v1) snapshots unchanged for
+  // backward compatibility with links already in the wild.
+  const inflateLineSnapshot = (snap) => {
+    if (!snap || typeof snap !== 'object') return null;
+    if (snap.v !== 2) return snap.id ? snap : null; // v1 or unrecognized
+    const line = {
+      id: snap.i,
+      name: snap.n,
+      createdAt: snap.c || Date.now(),
+      createdBy: snap.b || null,
+      activeMonitoring: !!snap.a,
+      sharedToken: snap.s || null,
+      sharedExpiresAt: snap.sx || null,
+      openToken: snap.o || null,
+      participants: (snap.p || []).map(row => Array.isArray(row)
+        ? { id: row[0], name: row[1], role: row[2] || '', enrolledAt: row[3] || 0 }
+        : row),
+      oneTimeTokens: {},
+    };
+    if (snap.t && typeof snap.t === 'object') {
+      for (const [tid, t] of Object.entries(snap.t)) {
+        line.oneTimeTokens[tid] = inflateToken(t);
+      }
+    }
+    return line;
+  };
+
+  // Recipient-side: take a payload from the URL hash (or legacy ?d=) and
+  // store the line locally so every cqLine.* helper just works.
+  //
+  // If the line already exists locally (host's own device, or any device
+  // that's received this line before), MERGE — keep local photos, local
+  // pending guest requests, and any host-side tokens the URL doesn't carry.
+  //
+  // Crucial: v2 payloads are PARTIAL. A one-time link doesn't carry the
+  // line's openToken; a guest link doesn't carry the line's sharedToken.
+  // So we explicitly fall back to existing values for any token-shaped
+  // field the payload is silent about. Naïve `...payload` spread would
+  // null those out and break later links.
   const hydrateFromPayload = (b64) => {
-    const payload = decodePayload(b64);
+    const raw = decodePayload(b64);
+    const payload = inflateLineSnapshot(raw);
     if (!payload || !payload.id) return null;
     const existing = getLine(payload.id);
+
+    // Union participants: payload's entries (with local photos preserved)
+    // PLUS any locally-known participants the payload didn't mention.
+    const mergeParticipants = () => {
+      const ex = existing && existing.participants || [];
+      const pay = payload.participants || [];
+      const seen = new Set();
+      const out = [];
+      for (const p of pay) {
+        const local = ex.find(x => x.id === p.id);
+        out.push(local && local.photo ? { ...p, photo: local.photo } : p);
+        seen.add(p.id);
+      }
+      for (const p of ex) {
+        if (!seen.has(p.id)) out.push(p);
+      }
+      return out;
+    };
+
     if (existing) {
       const merged = {
         ...existing,
-        ...payload,
-        // Preserve local presence + photos.
+        // Adopt payload fields, but never let a missing field clobber an
+        // existing non-null one. `payload.X || existing.X` keeps the
+        // current value when the payload doesn't carry that slot.
+        name: payload.name || existing.name,
+        createdAt: payload.createdAt || existing.createdAt,
+        createdBy: payload.createdBy || existing.createdBy,
+        activeMonitoring: payload.activeMonitoring || existing.activeMonitoring || false,
+        sharedToken: payload.sharedToken || existing.sharedToken || null,
+        sharedExpiresAt: payload.sharedExpiresAt || existing.sharedExpiresAt || null,
+        openToken: payload.openToken || existing.openToken || null,
         live: existing.live || {},
-        participants: (payload.participants || []).map(p => {
-          const local = (existing.participants || []).find(x => x.id === p.id);
-          return local ? { ...p, photo: local.photo } : p;
-        }),
+        pending: Array.isArray(existing.pending) ? existing.pending : [],
+        participants: mergeParticipants(),
         oneTimeTokens: { ...(existing.oneTimeTokens || {}), ...(payload.oneTimeTokens || {}) },
       };
       saveLine(merged);
@@ -403,23 +509,40 @@
     return fresh;
   };
 
-  // Note: a secure line's shared link encodes line id + shared token + a
-  // payload that lets the recipient's browser hydrate the line locally.
-  const buildSharedLink = (line) => {
-    const url = new URL('join.html', location.href);
-    url.searchParams.set('line', line.id);
-    url.searchParams.set('t', line.sharedToken);
-    url.searchParams.set('d', encodePayload(serializeLineForLink(line)));
+  // Convenience: read the encoded payload from this page's URL. Prefers
+  // the hash fragment (#d=...), falls back to the legacy ?d=... query
+  // param so old links still work.
+  const readPayloadFromLocation = () => {
+    const hash = (location.hash || '').replace(/^#/, '');
+    if (hash) {
+      const hashParams = new URLSearchParams(hash);
+      const d = hashParams.get('d');
+      if (d) return d;
+    }
+    return new URLSearchParams(location.search).get('d');
+  };
+
+  // Build a URL with the payload tucked into the hash fragment. Anything
+  // visible before the # in the user's clipboard looks like a normal URL.
+  const buildLinkUrl = (path, queryEntries, snapshot) => {
+    const url = new URL(path, location.href);
+    for (const [k, v] of queryEntries) url.searchParams.set(k, v);
+    if (snapshot) url.hash = 'd=' + encodePayload(snapshot);
     return url.toString();
   };
 
-  const buildOneTimeLink = (line, token) => {
-    const url = new URL('join.html', location.href);
-    url.searchParams.set('line', line.id);
-    url.searchParams.set('o', token);
-    url.searchParams.set('d', encodePayload(serializeLineForLink(line)));
-    return url.toString();
-  };
+  // Shared link (legacy, still wired). Embeds a full snapshot minus tokens.
+  const buildSharedLink = (line) => buildLinkUrl(
+    'join.html',
+    [['line', line.id], ['t', line.sharedToken]],
+    serializeLineForLink(line, { kind: 'shared' }),
+  );
+
+  const buildOneTimeLink = (line, token) => buildLinkUrl(
+    'join.html',
+    [['line', line.id], ['o', token]],
+    serializeLineForLink(line, { kind: 'one-time', tokenId: token }),
+  );
 
   const buildCallLink = (line, participantId) => {
     const url = new URL('call.html', location.href);
@@ -573,6 +696,7 @@
     requestGuestJoin, getPending, admitPending, denyPending,
     buildSharedLink, buildOneTimeLink, buildCallLink,
     serializeLineForLink, encodePayload, decodePayload, hydrateFromPayload,
+    readPayloadFromLocation,
     pingInCall, callIsLive, liveParticipantIds, clearLivePresence,
     onPresence, emitPresence,
     setSession, getSession, clearSession,

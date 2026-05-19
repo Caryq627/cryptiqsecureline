@@ -14,7 +14,13 @@ Voice-only conference calls with continuous biometric identity verification. No 
 ## Local dev
 
 ```bash
-python3 -m http.server 8000
+# static site
+python3 -m http.server 8000 &
+# cross-device sync API
+cd api && npm install && PORT=10100 npm start &
+# point the client at the local API
+# (run once in DevTools, persists in localStorage)
+localStorage.setItem('cq.api.override', 'http://127.0.0.1:10100')
 # visit http://localhost:8000
 ```
 
@@ -22,13 +28,15 @@ Camera & mic only work over `http://localhost` or `https://`. A deployed Render 
 
 ## Deploy to Render
 
-This is a pure static site (HTML/JS/CSS, no build step). On Render, pick **Static Site** — *not* Web Service.
+Two services from this repo (`render.yaml` declares both; Render auto-creates / updates them on push):
 
-1. Push this repo to GitHub / GitLab.
-2. In Render: **New → Static Site** → connect the repo.
-3. Settings:
-   - **Build command**: *(leave blank)*
-   - **Publish directory**: `.`
-4. Deploy. Render reads `render.yaml` for the security headers.
+1. **`cryptiq-secure-line`** — Static site (root). HTML/JS/CSS, no build.
+2. **`cryptiq-secure-line-api`** — Node web service (`api/`). Holds line state in memory so two devices see the same call, pending guests, and admit decisions.
 
-The app is fully client-side. No server secrets, no env vars needed for a demo (sim mode passes liveness automatically). To wire real FaceTec, set `window.CQ_FACETEC = { server, deviceKey }` before the scripts load.
+First-time connect: push the repo to GitHub, then Render → **Blueprints → New** → point at the repo. Render reads `render.yaml` and provisions both services. Every subsequent `git push origin main` auto-deploys both.
+
+The API URL is hardcoded in `js/cq-cloud.js` (`DEFAULT_API = https://cryptiq-secure-line-api.onrender.com`). If your Render service name differs, override per-page with `<meta name="cq-api" content="https://your-api.example">` or `window.CQ_API = '...'` before the scripts load.
+
+The free Render web service sleeps after 15 min of inactivity — the first request after a cold start may take ~30s while the dyno spins back up. For production traffic, upgrade the plan or swap the in-memory `Map` in `api/server.js` for Render Key Value / Redis.
+
+To wire real FaceTec, set `window.CQ_FACETEC = { server, deviceKey }` before the scripts load.

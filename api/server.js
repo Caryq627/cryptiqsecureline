@@ -1,0 +1,248 @@
+// Cryptiq Secure Line — cross-device line-state API
+//
+// One process holds line state in memory keyed by line id. Clients
+// (host + guest devices) GET fresh state, POST mutations, and poll a
+// few times per second to learn about admit decisions / guest requests
+// / live presence. Lines are evicted after 24h of inactivity.
+//
+// This is a demo server: no auth, no DB. Security relies on the line
+// id being unguessable (~64 bits of entropy) and the biometric gate
+// on the client. For production, swap the in-memory Map for Redis
+// (or Render Key Value) and require a host-token for admit/sync.
+
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '4mb' })); // photos in named-invite tokens
+
+const PORT = process.env.PORT || 10000;
+const LINE_TTL_MS = 24 * 60 * 60 * 1000;
+const PRESENCE_TTL_MS = 12 * 1000;
+
+const lines = new Map(); // id → { line, touchedAt }
+
+const touch = (id) => {
+  const entry = lines.get(id);
+  if (entry) entry.touchedAt = Date.now();
+};
+
+const getLine = (id) => {
+  const entry = lines.get(id);
+  return entry ? entry.line : null;
+};
+
+const setLine = (id, line) => {
+  lines.set(id, { line, touchedAt: Date.now() });
+};
+
+const randId = (len = 12) => {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+};
+
+// Periodic TTL sweep — drops lines that haven't been touched in a day.
+setInterval(() => {
+  const cutoff = Date.now() - LINE_TTL_MS;
+  for (const [id, entry] of lines) {
+    if (entry.touchedAt < cutoff) lines.delete(id);
+  }
+}, 60 * 60 * 1000);
+
+// Strip stale presence pings on read so clients don't see zombies.
+const pruneLive = (line) => {
+  if (!line || !line.live) return line;
+  const cutoff = Date.now() - PRESENCE_TTL_MS;
+  for (const pid of Object.keys(line.live)) {
+    if (line.live[pid] < cutoff) delete line.live[pid];
+  }
+  return line;
+};
+
+// ---------- routes ----------
+
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, lines: lines.size, uptime: process.uptime() });
+});
+
+// Fetch the latest line state.
+app.get('/api/line/:id', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  touch(req.params.id);
+  res.json({ ok: true, line: pruneLive(line) });
+});
+
+// Host pushes (creates or updates) the full line snapshot. Server-side
+// state for pending guests, admitted participants the host doesn't know
+// about yet, live presence, and one-time token usage is preserved across
+// the merge so we don't lose data the host hasn't polled yet.
+app.put('/api/line/:id', (req, res) => {
+  const incoming = req.body && req.body.line;
+  if (!incoming || incoming.id !== req.params.id) {
+    return res.status(400).json({ ok: false, reason: 'bad-line' });
+  }
+  const existing = getLine(req.params.id);
+  const merged = mergeFromHost(existing, incoming);
+  setLine(req.params.id, merged);
+  res.json({ ok: true, line: pruneLive(merged) });
+});
+
+// Guest submits a join request (open-link flow).
+app.post('/api/line/:id/pending', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  const { openToken, name, photo } = req.body || {};
+  if (!line.openToken || line.openToken !== openToken) {
+    return res.status(403).json({ ok: false, reason: 'invalid-token' });
+  }
+  if (!Array.isArray(line.pending)) line.pending = [];
+  const pendingId = randId();
+  line.pending.push({
+    id: pendingId,
+    name: String(name || 'Guest').slice(0, 80),
+    photo: photo || null,
+    status: 'pending',
+    requestedAt: Date.now(),
+  });
+  touch(req.params.id);
+  res.json({ ok: true, pendingId, line: pruneLive(line) });
+});
+
+// Host admits a pending guest. Materializes them as a participant so
+// every device that polls picks them up.
+app.post('/api/line/:id/admit', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line || !Array.isArray(line.pending)) {
+    return res.status(404).json({ ok: false, reason: 'not-found' });
+  }
+  const { pendingId } = req.body || {};
+  const entry = line.pending.find(p => p.id === pendingId);
+  if (!entry) return res.status(404).json({ ok: false, reason: 'pending-not-found' });
+  entry.status = 'admitted';
+  entry.admittedAt = Date.now();
+  line.participants = line.participants || [];
+  if (!line.participants.find(p => p.id === entry.id)) {
+    line.participants.push({
+      id: entry.id,
+      name: entry.name,
+      photo: entry.photo,
+      role: 'guest',
+      enrolledAt: entry.admittedAt,
+    });
+  }
+  touch(req.params.id);
+  res.json({ ok: true, line: pruneLive(line) });
+});
+
+app.post('/api/line/:id/deny', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line || !Array.isArray(line.pending)) {
+    return res.status(404).json({ ok: false, reason: 'not-found' });
+  }
+  const { pendingId } = req.body || {};
+  const entry = line.pending.find(p => p.id === pendingId);
+  if (!entry) return res.status(404).json({ ok: false, reason: 'pending-not-found' });
+  entry.status = 'denied';
+  entry.deniedAt = Date.now();
+  touch(req.params.id);
+  res.json({ ok: true, line: pruneLive(line) });
+});
+
+// Consume a one-time token. For named-invite tokens (no participantId
+// yet) this also materializes the recipient as a participant so the
+// host's roster picks them up. Mirrors cqLine.consumeOneTime on the
+// client, but server-side so the host learns about it.
+app.post('/api/line/:id/consume-onetime', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  const { token } = req.body || {};
+  const entry = line.oneTimeTokens && line.oneTimeTokens[token];
+  if (!entry) return res.json({ ok: false, reason: 'invalid' });
+  if (entry.singleUse && entry.usedAt) return res.json({ ok: false, reason: 'used' });
+  if (entry.expiresAt && Date.now() > entry.expiresAt) return res.json({ ok: false, reason: 'expired' });
+  if (entry.pending && !entry.participantId) {
+    const pid = randId(10);
+    line.participants = line.participants || [];
+    line.participants.push({
+      id: pid,
+      name: entry.name || 'Guest',
+      photo: entry.photo || null,
+      role: 'guest',
+      enrolledAt: Date.now(),
+    });
+    entry.participantId = pid;
+    entry.pending = false;
+  }
+  entry.usedAt = Date.now();
+  entry.usedCount = (entry.usedCount || 0) + 1;
+  touch(req.params.id);
+  res.json({ ok: true, participantId: entry.participantId, line: pruneLive(line) });
+});
+
+// Presence heartbeat — every few seconds from each tab that's in the call.
+app.post('/api/line/:id/ping', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  const { participantId } = req.body || {};
+  if (!participantId) return res.status(400).json({ ok: false, reason: 'no-pid' });
+  if (!line.live) line.live = {};
+  line.live[participantId] = Date.now();
+  touch(req.params.id);
+  res.json({ ok: true });
+});
+
+// ---------- merge helper ----------
+
+// Combine host's authoritative snapshot with server-side state the host
+// may not know about. Rules:
+//   - participants: union by id; host's entries win on conflict (host
+//     mints/removes attendees). Anything the server has that the host
+//     doesn't is something the host hasn't polled yet — keep it.
+//   - oneTimeTokens: union by key; server-side `usedAt`/`usedCount`
+//     beat host's older "unused" state.
+//   - pending: keep server's list — guest requests live here and the
+//     host learns about them via poll.
+//   - live: union, max timestamp per participant.
+function mergeFromHost(existing, host) {
+  if (!existing) return { ...host, pending: host.pending || [], live: host.live || {} };
+
+  const pById = new Map();
+  for (const p of (existing.participants || [])) pById.set(p.id, p);
+  for (const p of (host.participants || [])) pById.set(p.id, p);
+
+  const tokens = { ...(existing.oneTimeTokens || {}) };
+  for (const [tid, t] of Object.entries(host.oneTimeTokens || {})) {
+    const ex = tokens[tid];
+    if (ex && (ex.usedAt || (ex.usedCount || 0) > 0)) {
+      // Server saw it consumed — preserve the consume marker but adopt
+      // host's photo/name/etc fields in case they changed.
+      tokens[tid] = { ...t, usedAt: ex.usedAt, usedCount: ex.usedCount, participantId: ex.participantId || t.participantId, pending: ex.pending && t.pending };
+    } else {
+      tokens[tid] = t;
+    }
+  }
+
+  const live = { ...(existing.live || {}) };
+  for (const [pid, ts] of Object.entries(host.live || {})) {
+    if (!live[pid] || live[pid] < ts) live[pid] = ts;
+  }
+
+  return {
+    ...host,
+    participants: Array.from(pById.values()),
+    oneTimeTokens: tokens,
+    pending: Array.isArray(existing.pending) ? existing.pending : (host.pending || []),
+    live,
+  };
+}
+
+// ---------- start ----------
+
+app.listen(PORT, () => {
+  // eslint-disable-next-line no-console
+  console.log(`cq-secure-line-api listening on :${PORT}`);
+});

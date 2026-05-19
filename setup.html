@@ -209,6 +209,7 @@
   <script src="js/icons.js"></script>
   <script src="js/theme.js"></script>
   <script src="js/secure-line.js"></script>
+  <script src="js/cq-cloud.js"></script>
   <script>
     window.CQ_FACETEC = {
       server:    'https://54.211.82.159.sslip.io',
@@ -244,6 +245,13 @@
     const prefsFor = (pid) => {
       if (!mintPrefs.has(pid)) mintPrefs.set(pid, { expiresKey: '24h', singleUse: true, panelOpen: false });
       return mintPrefs.get(pid);
+    };
+
+    // Push the current line snapshot to the cross-device cloud (Render
+    // web service). Best-effort — local-only flow still works if offline.
+    const pushLineToCloud = () => {
+      if (!line || !window.cqCloud) return;
+      cqCloud.put(line).catch(() => {});
     };
 
     // ---------- Step rendering ----------
@@ -339,6 +347,7 @@
             if (!confirm(`Remove ${p.name}?`)) return;
             cqLine.removeParticipant(line.id, p.id);
             line = cqLine.getLine(line.id);
+            pushLineToCloud();
             renderPeople();
             el.nextBtn.disabled = line.participants.length === 0;
           });
@@ -432,6 +441,7 @@
         panel.querySelector('.revoke-btn').addEventListener('click', () => {
           cqLine.revokeOneTime(line.id, existingToken.tokenId);
           line = cqLine.getLine(line.id);
+          pushLineToCloud();
           renderPeople(true);
           toast('Link revoked');
         });
@@ -481,6 +491,7 @@
         singleUse: prefs.singleUse,
       });
       line = cqLine.getLine(line.id);
+      pushLineToCloud();
       const url = cqLine.buildOneTimeLink(line, token);
       await cqLine.copyToClipboard(url);
       prefs.panelOpen = false;
@@ -893,6 +904,7 @@
       }
       closeCapture();
       renderPeople();
+      pushLineToCloud();
       el.nextBtn.disabled = line.participants.length === 0;
     });
 
@@ -924,6 +936,7 @@
       if (step === 1) {
         const activeMonitoring = !!document.getElementById('active-monitoring').checked;
         line = cqLine.createLine(el.nameInput.value, { activeMonitoring });
+        pushLineToCloud();
         step = 2;
       } else if (step === 2) {
         if (!line || !line.participants.length) return;
@@ -990,6 +1003,7 @@
     makeGuest.addEventListener('click', async () => {
       cqLine.mintOpenLink(line.id);
       line = cqLine.getLine(line.id);
+      pushLineToCloud();
       showGuestLink();
       await cqLine.copyToClipboard(guestUrl.textContent);
       toast('Open guest link copied');

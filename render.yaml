@@ -1,5 +1,8 @@
-# Cryptiq Secure Line — Render static site config
-# Drop this at the root of the repo. Render auto-detects it on connect.
+# Cryptiq Secure Line — Render multi-service config
+# Two services from the same repo:
+#   1. cryptiq-secure-line       — static HTML/CSS/JS (existing site)
+#   2. cryptiq-secure-line-api   — Node web service for cross-device sync
+# Render auto-detects this file on connect and creates / updates both.
 services:
   - type: web
     name: cryptiq-secure-line
@@ -19,3 +22,15 @@ services:
       - path: /*
         name: X-Frame-Options
         value: DENY
+
+  - type: web
+    name: cryptiq-secure-line-api
+    runtime: node
+    plan: free
+    rootDir: api
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20

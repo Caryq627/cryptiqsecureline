@@ -143,6 +143,7 @@
   <script src="js/icons.js"></script>
   <script src="js/theme.js"></script>
   <script src="js/secure-line.js"></script>
+  <script src="js/cq-cloud.js"></script>
   <script>
     window.CQ_FACETEC = {
       server:    'https://54.211.82.159.sslip.io',
@@ -157,10 +158,31 @@
     const params   = new URLSearchParams(location.search);
     const lineId   = params.get('line');
     const openTok  = params.get('g');
-    const payload  = params.get('d');
-    // Hydrate from URL-embedded snapshot if the line isn't on this device.
+    // Snapshot payload now rides in the URL hash (#d=...) so the visible
+    // share URL stays clean. Legacy ?d=... links still resolve.
+    const payload  = cqLine.readPayloadFromLocation();
+    // Hydrate from the URL-embedded snapshot. We hydrate UNCONDITIONALLY
+    // when a payload is present — the merge logic preserves local photos
+    // and pending entries, and lets the recipient pick up freshly-minted
+    // tokens that were added after their localStorage was last seeded.
     let line = lineId ? cqLine.getLine(lineId) : null;
-    if (!line && payload) line = cqLine.hydrateFromPayload(payload);
+    if (payload) {
+      const merged = cqLine.hydrateFromPayload(payload);
+      if (merged) line = merged;
+    }
+    // Cross-device: also pull the latest state from the cloud so we
+    // see fresh tokens the host minted after this URL was generated.
+    if (lineId && window.cqCloud) {
+      cqCloud.fetch(lineId).then(r => {
+        if (r && r.ok && r.line) {
+          cqCloud.mergeIntoLocal(r.line);
+          line = cqLine.getLine(lineId);
+          if (line && line.openToken === openTok) {
+            $('g-linename').textContent = line.name;
+          }
+        }
+      }).catch(() => {});
+    }
 
     const $ = (id) => document.getElementById(id);
     const cards = {
@@ -334,20 +356,42 @@
 
     let myPendingId = null;
 
-    cap.submitBtn.addEventListener('click', () => {
+    cap.submitBtn.addEventListener('click', async () => {
       if (!cap.frame || !cap.nameEl.value.trim()) return;
-      const r = cqLine.requestGuestJoin(lineId, openTok, {
-        name: cap.nameEl.value.trim(),
-        photo: cap.frame,
-      });
-      if (!r.ok) {
-        cap.errEl.style.display = '';
-        cap.errEl.textContent = 'Unable to submit: ' + (r.reason || 'unknown');
-        return;
+      cap.submitBtn.disabled = true;
+      const name = cap.nameEl.value.trim();
+      const photo = cap.frame;
+
+      // Cross-device: post the join request to the cloud so the host's
+      // call.html (on another device) sees it. Falls back to the local
+      // BroadcastChannel path if the cloud is unreachable, which is
+      // enough for single-browser testing.
+      let pendingId = null;
+      if (window.cqCloud) {
+        const cloudRes = await cqCloud.addPending(lineId, { openToken: openTok, name, photo });
+        if (cloudRes && cloudRes.ok) {
+          pendingId = cloudRes.pendingId;
+          if (cloudRes.line) cqCloud.mergeIntoLocal(cloudRes.line);
+        } else if (cloudRes && cloudRes.reason && cloudRes.reason !== 'network') {
+          cap.errEl.style.display = '';
+          cap.errEl.textContent = 'Unable to submit: ' + cloudRes.reason;
+          cap.submitBtn.disabled = false;
+          return;
+        }
       }
-      myPendingId = r.pendingId;
+      if (!pendingId) {
+        const local = cqLine.requestGuestJoin(lineId, openTok, { name, photo });
+        if (!local.ok) {
+          cap.errEl.style.display = '';
+          cap.errEl.textContent = 'Unable to submit: ' + (local.reason || 'unknown');
+          cap.submitBtn.disabled = false;
+          return;
+        }
+        pendingId = local.pendingId;
+      }
+      myPendingId = pendingId;
       stopCameraMode();
-      enterWaiting(cap.nameEl.value.trim(), cap.frame);
+      enterWaiting(name, photo);
     });
 
     const enterWaiting = (name, photo) => {
@@ -376,6 +420,29 @@
         showCard('denied');
       }
     });
+
+    // Cloud sync: poll the Render API so we learn about admit/deny
+    // even when the host is on a different device. Falls back to the
+    // localStorage poll below for the single-browser case.
+    if (window.cqCloud && lineId) {
+      cqCloud.startSync(lineId, (remote) => {
+        if (!myPendingId) return;
+        const entry = (remote.pending || []).find(p => p.id === myPendingId);
+        if (!entry) return;
+        if (entry.status === 'admitted') {
+          const p = (remote.participants || []).find(x => x.id === myPendingId);
+          if (p) {
+            cqLine.setSession({ lineId, participantId: p.id, entry: 'guest', enteredAt: Date.now(), gatePassedAt: Date.now() });
+            const callUrl = cqLine.buildCallLink(cqLine.getLine(lineId), p.id);
+            cqConnecting.show({ onDone: () => { location.href = callUrl; } });
+            myPendingId = null;
+          }
+        } else if (entry.status === 'denied') {
+          showCard('denied');
+          myPendingId = null;
+        }
+      });
+    }
 
     // Also poll localStorage in case BroadcastChannel missed (e.g., different browsers).
     setInterval(() => {

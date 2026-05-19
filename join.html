@@ -91,6 +91,7 @@
   <script src="js/icons.js"></script>
   <script src="js/theme.js"></script>
   <script src="js/secure-line.js"></script>
+  <script src="js/cq-cloud.js"></script>
   <script>
     window.CQ_FACETEC = {
       server:    'https://54.211.82.159.sslip.io',
@@ -112,7 +113,9 @@
     const lineId = params.get('line');
     const sharedT = params.get('t');
     const oneTimeT = params.get('o');
-    const payload = params.get('d');
+    // Snapshot payload now rides in the URL hash (#d=...) so the visible
+    // share URL stays clean. Legacy ?d=... links still resolve.
+    const payload = cqLine.readPayloadFromLocation();
 
     const el = {
       title: document.getElementById('gate-title'),
@@ -143,11 +146,14 @@
       throw new Error('no line');
     }
 
-    // If we don't have this line locally (cross-device share), hydrate it
-    // from the URL-embedded snapshot so the rest of the flow just works.
+    // Hydrate from the URL-embedded snapshot. Even when the line already
+    // exists locally, we re-merge — the link may carry a freshly-minted
+    // one-time token that the local cache doesn't have yet. The merge
+    // preserves local photos and never clobbers existing tokens.
     let line = cqLine.getLine(lineId);
-    if (!line && payload) {
-      line = cqLine.hydrateFromPayload(payload);
+    if (payload) {
+      const merged = cqLine.hydrateFromPayload(payload);
+      if (merged) line = merged;
     }
     if (!line) {
       renderError('Line not found', 'This secure line may have expired, been deleted, or the link is missing required data.');
@@ -362,21 +368,39 @@
       poll();
     };
 
-    el.go.addEventListener('click', () => {
+    el.go.addEventListener('click', async () => {
       if (!gatePass) return;
-      // Burn one-time token
+      el.go.disabled = true;
+      // Burn one-time token. We consume on the CLOUD first so the host's
+      // device sees the named-invite participant materialize and the
+      // server marks the token used — preventing replay from another
+      // device. Falls back to a local-only consume if the cloud is
+      // unreachable so single-browser demos still work.
       if (oneTimeT) {
-        const r = cqLine.consumeOneTime(lineId, oneTimeT);
-        if (!r.ok) {
-          renderError('Link already used', 'A 1-time link is valid for a single entry.');
-          return;
+        let consumed = null;
+        if (window.cqCloud) {
+          const cloudRes = await cqCloud.consumeOneTime(lineId, oneTimeT);
+          if (cloudRes && cloudRes.ok) {
+            consumed = cloudRes;
+            if (cloudRes.line) cqCloud.mergeIntoLocal(cloudRes.line);
+          } else if (cloudRes && cloudRes.reason && cloudRes.reason !== 'network' && cloudRes.reason !== 'not-found') {
+            renderError('Link already used', 'A 1-time link is valid for a single entry.');
+            return;
+          }
         }
-        // Named invites materialize the participant inside consumeOneTime;
-        // pick up the freshly-minted participantId so the call session
-        // points at a real participant.
-        if (r.participantId) {
-          gatePass.participantId = r.participantId;
+        if (!consumed) {
+          const local = cqLine.consumeOneTime(lineId, oneTimeT);
+          if (!local.ok) {
+            renderError('Link already used', 'A 1-time link is valid for a single entry.');
+            return;
+          }
+          consumed = local;
         }
+        if (consumed.participantId) {
+          gatePass.participantId = consumed.participantId;
+        }
+        // Refresh the in-memory line so callUrl uses the latest snapshot.
+        line = cqLine.getLine(lineId) || line;
       }
       // Stamp gatePassedAt so call.html accepts entry. Without this stamp,
       // call.html refuses to render — that's how we close the pull-to-

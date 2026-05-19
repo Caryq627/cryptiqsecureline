@@ -301,6 +301,7 @@
   <script src="js/icons.js"></script>
   <script src="js/theme.js"></script>
   <script src="js/secure-line.js"></script>
+  <script src="js/cq-cloud.js"></script>
   <script>
     // Live verification provider config. Must be set before facetec-bridge.js loads.
     window.CQ_FACETEC = {
@@ -1046,19 +1047,23 @@
         </div>
       `;
       cqIconsHydrate(admitSlot);
-      admitSlot.querySelector('[data-role="admit"]').addEventListener('click', () => {
-        const admitted = cqLine.admitPending(line.id, entry.id);
-        if (admitted) {
-          // Materialize the new participant as a tile for everyone.
-          const freshLine = cqLine.getLine(line.id);
-          const newP = freshLine.participants.find(p => p.id === entry.id);
-          if (newP && !tilesById.has(newP.id)) buildTile(newP);
-        }
+      admitSlot.querySelector('[data-role="admit"]').addEventListener('click', async () => {
+        // Mark locally so the strip clears immediately, then push the
+        // admit decision to the cloud so the guest's device learns
+        // they're in and proceeds into the call. The cloud also
+        // materializes the participant — when our poll picks it up,
+        // mergeIntoLocal updates the roster.
+        cqLine.admitPending(line.id, entry.id);
         renderAdmitStrip();
+        if (window.cqCloud) await cqCloud.admit(line.id, entry.id).catch(() => {});
+        const freshLine = cqLine.getLine(line.id);
+        const newP = freshLine && freshLine.participants.find(p => p.id === entry.id);
+        if (newP && !tilesById.has(newP.id)) buildTile(newP);
       });
-      admitSlot.querySelector('[data-role="deny"]').addEventListener('click', () => {
+      admitSlot.querySelector('[data-role="deny"]').addEventListener('click', async () => {
         cqLine.denyPending(line.id, entry.id);
         renderAdmitStrip();
+        if (window.cqCloud) await cqCloud.deny(line.id, entry.id).catch(() => {});
       });
     };
 
@@ -1071,6 +1076,34 @@
     });
     // Initial render in case there's already a pending entry when this tab loads.
     renderAdmitStrip();
+
+    // ---------- Cloud sync ----------
+    //
+    // Cross-device: poll the line state from the Render API every few
+    // seconds, merge fresh participants / pending guests / one-time-token
+    // consumption into the local line, and re-render. Also ping our
+    // presence up so other devices see us live.
+    if (window.cqCloud) {
+      // First sync: push our current state up so the server has the
+      // line's tokens, participants, etc.
+      cqCloud.put(cqLine.getLine(line.id)).catch(() => {});
+
+      cqCloud.startSync(line.id, (remote) => {
+        // mergeIntoLocal already wrote the merged line into localStorage.
+        // Re-render the bits that depend on remote changes.
+        renderAdmitStrip();
+        const fresh = cqLine.getLine(line.id);
+        if (!fresh) return;
+        // Materialize tiles for any newly-arrived participants.
+        for (const p of (fresh.participants || [])) {
+          if (!tilesById.has(p.id)) buildTile(p);
+        }
+      });
+
+      // Presence heartbeat — server prunes anyone we haven't pinged in
+      // ~12s, so 4s cadence keeps us solidly visible.
+      setInterval(() => cqCloud.ping(line.id, me.id).catch(() => {}), 4000);
+    }
 
     // ---------- Share-link sheet (in-call) ----------
     //
@@ -1228,6 +1261,7 @@
         singleUse: true,
       });
       const updated = cqLine.getLine(line.id);
+      if (window.cqCloud) cqCloud.put(updated).catch(() => {});
       const url = cqLine.buildOneTimeLink(updated, token);
       showResultView(url, `ONE-TIME · ${expLabel(shareExp.key)} · FOR ${otName.value.toUpperCase()}`);
       // NOTE: do NOT add a tile here — participant doesn't exist until the
@@ -1243,6 +1277,7 @@
         if (kind === 'open') {
           cqLine.mintOpenLink(line.id);
           const updated = cqLine.getLine(line.id);
+          if (window.cqCloud) cqCloud.put(updated).catch(() => {});
           const url = cqLine.buildGuestLink(updated);
           showResultView(url, 'OPEN GUEST LINK · HOST ADMITS');
           return;
