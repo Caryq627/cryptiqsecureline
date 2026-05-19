@@ -25,11 +25,21 @@
     verbose:       true,
   };
 
-  // Honor environment config
+  // Honor environment config. Every shipped page sets CQ_FACETEC, so
+  // simMode should always be false in production. If it ever isn't,
+  // shout in the console so the dev notices instead of silently letting
+  // a "SIMULATION" path through — this is a security demo, not a fake.
   if (root.CQ_FACETEC && root.CQ_FACETEC.server && root.CQ_FACETEC.deviceKey) {
     config.server    = root.CQ_FACETEC.server;
     config.deviceKey = root.CQ_FACETEC.deviceKey;
     config.simMode   = false;
+  } else {
+    try {
+      console.warn(
+        '[cq/verify] CQ_FACETEC not configured — falling back to local sim.\n' +
+        'Set window.CQ_FACETEC = { server, deviceKey } before js/facetec-bridge.js loads.'
+      );
+    } catch {}
   }
 
   const configure = (opts) => {

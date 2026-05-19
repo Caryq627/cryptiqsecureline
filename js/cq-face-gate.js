@@ -36,9 +36,6 @@
     overlay.className = 'face-gate-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
-    const provider = (root.cqFacetec && !root.cqFacetec.simMode)
-      ? `<span class="provider-badge is-live" title="Live identity verification"><span class="dot"></span>LIVE VERIFY</span>`
-      : `<span class="provider-badge is-sim" title="Simulation mode — no live verification server configured"><span class="dot"></span>SIMULATION</span>`;
 
     const uploadBtnHtml = allowUpload
       ? `<button class="btn btn-ghost btn-block" data-role="upload" type="button" style="margin-top:6px;">
@@ -59,7 +56,6 @@
            <div class="scanline"></div>
          </div>
          <div class="viewfinder-status" data-role="status">STARTING CAMERA…</div>
-         ${provider}
          <button class="btn btn-ghost btn-block" data-role="refresh" type="button" style="display:none; margin-top:6px;">
            <span data-icon="refresh"></span> Refresh camera
          </button>
