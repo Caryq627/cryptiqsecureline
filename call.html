@@ -804,7 +804,7 @@
         cqLine.setSession({ ...sess, gatePassedAt: Date.now() });
       }
       const cutoff = Date.now() - 6000;
-      const guestCutoff = Date.now() - 30000;
+      const guestCutoff = Date.now() - 60000;
       const droppedGuests = [];
       tilesById.forEach((t, pid) => {
         if (pid === me.id) return;
@@ -814,7 +814,7 @@
           updateRoster();
         }
         // Drop guests who joined via open-link or one-time link and
-        // haven't pinged in 30s. Enrolled attendees (non-guest role)
+        // haven't pinged in 60s. Enrolled attendees (non-guest role)
         // stay forever — they're host-configured roster, not session
         // participants.
         if (t.lastPing && t.lastPing < guestCutoff) {
