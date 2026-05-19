@@ -336,6 +336,7 @@
     // proceeds the moment someone shows up.
 
     let waitingRoomTimer = null;
+    let waitingStopSync = null;
     const showWaitingRoom = (callUrl) => {
       el.eyebrow.textContent = 'WAITING ROOM';
       el.title.innerHTML = `Hold tight — the meeting hasn’t started yet.`;
@@ -347,22 +348,38 @@
       el.go.innerHTML = '<span data-icon="phone"></span> Waiting for host…';
       cqIconsHydrate(el.go);
 
-      const poll = () => {
-        // Anyone in the call (other than us, since we haven't navigated yet)
-        // means it's started.
+      const enterCall = () => {
+        if (waitingRoomTimer) { clearInterval(waitingRoomTimer); waitingRoomTimer = null; }
+        if (waitingStopSync) { waitingStopSync(); waitingStopSync = null; }
+        el.status.textContent = 'HOST IS LIVE · ENTERING…';
+        el.status.className = 'viewfinder-status is-verified';
+        try { cqFacetec.closeStream(stream); } catch {}
+        cqConnecting.show({
+          tag:      'Joining live secure line…',
+          tagAfter: 'Secure line established — entering…',
+          onDone: () => { location.href = callUrl; },
+        });
+      };
+
+      const isHostLive = () => {
+        // "Live" = ANYONE else has pinged recently. Reads from the line
+        // state in localStorage, which the cloud sync keeps fresh below.
         const live = cqLine.liveParticipantIds(lineId);
-        const others = live.filter(pid => pid !== gatePass.participantId);
-        if (others.length) {
-          if (waitingRoomTimer) { clearInterval(waitingRoomTimer); waitingRoomTimer = null; }
-          el.status.textContent = 'HOST IS LIVE · ENTERING…';
-          el.status.className = 'viewfinder-status is-verified';
-          cqFacetec.closeStream(stream);
-          cqConnecting.show({
-            tag:      'Joining live secure line…',
-            tagAfter: 'Secure line established — entering…',
-            onDone: () => { location.href = callUrl; },
-          });
-        }
+        return live.some(pid => pid !== gatePass.participantId);
+      };
+
+      // Cross-device: the host's pings go to the cloud, not our local
+      // storage. Keep our local state fresh by polling the cloud — the
+      // moment the host enters their call, their live entry shows up
+      // and we proceed.
+      if (window.cqCloud) {
+        waitingStopSync = cqCloud.startSync(lineId, () => {
+          if (isHostLive()) enterCall();
+        }, { intervalMs: 1500 });
+      }
+
+      const poll = () => {
+        if (isHostLive()) enterCall();
       };
       waitingRoomTimer = setInterval(poll, 1500);
       poll();
@@ -418,7 +435,18 @@
       // The host opens the meeting; everyone else waits for them. If we're
       // the host or someone is already live, head straight in. Otherwise
       // drop into a waiting-room state and auto-enter when the host arrives.
+      //
+      // Cross-device: our local line.live cache may be stale (the only
+      // refreshes are at page boot and from a one-shot fetch). Pull a
+      // fresh snapshot from the cloud before deciding so we don't dump
+      // recipients into the waiting room while the host is already live.
       const isHost = line.createdBy && (gatePass.participantId === line.createdBy);
+      if (window.cqCloud) {
+        try {
+          const r = await cqCloud.fetch(lineId);
+          if (r && r.ok && r.line) cqCloud.mergeIntoLocal(r.line);
+        } catch {}
+      }
       if (isHost || cqLine.callIsLive(lineId)) {
         cqFacetec.closeStream(stream);
         cqConnecting.show({ onDone: () => { location.href = callUrl; } });

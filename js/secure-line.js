@@ -560,11 +560,23 @@
 
   const PRESENCE_TTL = 8000;
 
+  // line.live[pid] is either a bare timestamp (legacy, from pingInCall)
+  // or an object { ts, state, muted, handRaised, speaking } from the
+  // cross-device cloud sync. Centralize the extraction so every callsite
+  // sees a number.
+  const liveTsOf = (v) => (v && typeof v === 'object') ? v.ts : (typeof v === 'number' ? v : 0);
+
   const pingInCall = (lineId, participantId) => {
     const line = getLine(lineId);
     if (!line) return;
     if (!line.live) line.live = {};
-    line.live[participantId] = Date.now();
+    // Preserve any state fields that the cloud sync layer may have written.
+    const existing = line.live[participantId];
+    if (existing && typeof existing === 'object') {
+      line.live[participantId] = { ...existing, ts: Date.now() };
+    } else {
+      line.live[participantId] = Date.now();
+    }
     saveLine(line);
   };
 
@@ -572,14 +584,16 @@
     const line = getLine(lineId);
     if (!line || !line.live) return false;
     const cutoff = Date.now() - withinMs;
-    return Object.values(line.live).some(ts => ts > cutoff);
+    return Object.values(line.live).some(v => liveTsOf(v) > cutoff);
   };
 
   const liveParticipantIds = (lineId, withinMs = PRESENCE_TTL) => {
     const line = getLine(lineId);
     if (!line || !line.live) return [];
     const cutoff = Date.now() - withinMs;
-    return Object.entries(line.live).filter(([_, ts]) => ts > cutoff).map(([pid]) => pid);
+    return Object.entries(line.live)
+      .filter(([_, v]) => liveTsOf(v) > cutoff)
+      .map(([pid]) => pid);
   };
 
   const clearLivePresence = (lineId, participantId) => {

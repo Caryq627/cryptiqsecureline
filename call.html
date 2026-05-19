@@ -1195,9 +1195,15 @@
     // consumption into the local line, and re-render. Also ping our
     // presence up so other devices see us live.
     if (window.cqCloud) {
-      // First sync: push our current state up so the server has the
-      // line's tokens, participants, etc.
-      cqCloud.put(cqLine.getLine(line.id)).catch(() => {});
+      // First sync: only the HOST pushes the full line snapshot up.
+      // Non-host devices hydrated from a URL payload don't have photos
+      // (URL hash strips them) and don't know about every token the
+      // host has minted; pushing from their thin view would degrade
+      // the cloud's authoritative copy. Non-hosts rely on pulls + the
+      // mutation endpoints (pending / admit / consume-onetime / ping).
+      if (isHost) {
+        cqCloud.put(cqLine.getLine(line.id)).catch(() => {});
+      }
 
       cqCloud.startSync(line.id, (remote) => {
         // mergeIntoLocal already wrote the merged line into localStorage.

@@ -271,7 +271,17 @@ function mergeFromHost(existing, host) {
 
   const pById = new Map();
   for (const p of (existing.participants || [])) pById.set(p.id, p);
-  for (const p of (host.participants || [])) pById.set(p.id, p);
+  for (const p of (host.participants || [])) {
+    // Preserve the cloud's photo when the host's PUT lacks one
+    // (recipient devices hydrate from URL payloads that strip photos
+    // for size — they shouldn't degrade the cloud copy).
+    const ex = pById.get(p.id);
+    if (ex && ex.photo && !p.photo) {
+      pById.set(p.id, { ...p, photo: ex.photo });
+    } else {
+      pById.set(p.id, p);
+    }
+  }
 
   const tokens = { ...(existing.oneTimeTokens || {}) };
   for (const [tid, t] of Object.entries(host.oneTimeTokens || {})) {
