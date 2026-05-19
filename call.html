@@ -1022,15 +1022,88 @@
     const admitSlot = document.getElementById('admit-slot');
     const isHost = line.createdBy === me.id;
 
+    // Track which pending entries we've already alerted on so polling
+    // doesn't re-fire the chime every 2.5s for the same waiting guest.
+    const alertedPendingIds = new Set();
+
+    // Two-tone chime via Web Audio — no asset to bundle, just rings.
+    // Some browsers gate audio until the user interacts; if the host
+    // hasn't clicked yet this stays silent. The banner + tile pulse
+    // still fire, so the cue isn't lost.
+    let audioCtx = null;
+    const playJoinChime = () => {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        const tones = [{ f: 880, t: 0 }, { f: 1320, t: 0.13 }];
+        for (const { f, t } of tones) {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = f;
+          gain.gain.value = 0;
+          gain.gain.setValueAtTime(0, now + t);
+          gain.gain.linearRampToValueAtTime(0.18, now + t + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + t + 0.30);
+          osc.connect(gain).connect(audioCtx.destination);
+          osc.start(now + t);
+          osc.stop(now + t + 0.32);
+        }
+      } catch {}
+    };
+
+    // Flash the tab title so the host notices even if they're on
+    // another tab / window. Restores the original title when they
+    // come back, or after a short timeout.
+    const originalTitle = document.title;
+    let titleFlashTimer = null;
+    const flashTitle = (text) => {
+      clearInterval(titleFlashTimer);
+      let on = false;
+      titleFlashTimer = setInterval(() => {
+        on = !on;
+        document.title = on ? text : originalTitle;
+      }, 900);
+      const stop = () => {
+        clearInterval(titleFlashTimer);
+        titleFlashTimer = null;
+        document.title = originalTitle;
+        document.removeEventListener('visibilitychange', onVisible);
+      };
+      const onVisible = () => { if (!document.hidden) stop(); };
+      document.addEventListener('visibilitychange', onVisible);
+      setTimeout(stop, 20000);
+    };
+
     const renderAdmitStrip = () => {
       if (!isHost) return;
       const pending = cqLine.getPending(line.id) || [];
+
+      // Detect new arrivals BEFORE rendering so we can fire the alert
+      // exactly once per pending entry, even though renderAdmitStrip
+      // gets called on every poll tick.
+      const currentIds = new Set(pending.map(p => p.id));
+      const fresh = pending.filter(p => !alertedPendingIds.has(p.id));
+      for (const id of alertedPendingIds) {
+        if (!currentIds.has(id)) alertedPendingIds.delete(id);
+      }
+      if (fresh.length) {
+        for (const p of fresh) alertedPendingIds.add(p.id);
+        playJoinChime();
+        const headlineName = fresh[0].name || 'Someone';
+        const extra = fresh.length > 1 ? ` +${fresh.length - 1} more` : '';
+        banner(`${headlineName} is asking to join${extra} — admit below`, 'warn');
+        flashTitle(`(${pending.length}) waiting to join`);
+      }
+
       if (!pending.length) { admitSlot.innerHTML = ''; return; }
       // Show oldest pending request first.
       const entry = pending[0];
       const safeName = (entry.name || 'Guest').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const isFreshRender = fresh.length > 0;
       admitSlot.innerHTML = `
-        <div class="admit-strip" role="region" aria-label="Guest admission">
+        <div class="admit-strip${isFreshRender ? ' is-fresh' : ''}" role="region" aria-label="Guest admission">
           <div class="avatar"${entry.photo ? ` style="background-image:url(${entry.photo})"` : ''}></div>
           <div class="info">
             <div class="name">${safeName}</div>
