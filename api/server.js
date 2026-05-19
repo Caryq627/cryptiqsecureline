@@ -20,6 +20,7 @@ app.use(express.json({ limit: '4mb' })); // photos in named-invite tokens
 const PORT = process.env.PORT || 10000;
 const LINE_TTL_MS = 24 * 60 * 60 * 1000;
 const PRESENCE_TTL_MS = 12 * 1000;
+const PENDING_TTL_MS = 5 * 60 * 1000; // stale join requests auto-drop
 
 const lines = new Map(); // id → { line, touchedAt }
 
@@ -79,6 +80,20 @@ const pruneLive = (line) => {
   return line;
 };
 
+// Drop join requests that have been hanging around for too long. A guest
+// who hit the open link, never got admitted, and closed their tab would
+// otherwise haunt the host's admit strip forever. Run on every read.
+const prunePending = (line) => {
+  if (!line || !Array.isArray(line.pending)) return line;
+  const cutoff = Date.now() - PENDING_TTL_MS;
+  line.pending = line.pending.filter(p => (p.requestedAt || 0) > cutoff);
+  return line;
+};
+
+// Combined cleanup applied on every GET so polling clients converge on
+// the same view the server has.
+const sanitize = (line) => prunePending(pruneLive(line));
+
 // ---------- routes ----------
 
 app.get('/health', (_req, res) => {
@@ -90,7 +105,7 @@ app.get('/api/line/:id', (req, res) => {
   const line = getLine(req.params.id);
   if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
   touch(req.params.id);
-  res.json({ ok: true, line: pruneLive(line) });
+  res.json({ ok: true, line: sanitize(line) });
 });
 
 // Host pushes (creates or updates) the full line snapshot. Server-side
@@ -105,7 +120,7 @@ app.put('/api/line/:id', (req, res) => {
   const existing = getLine(req.params.id);
   const merged = mergeFromHost(existing, incoming);
   setLine(req.params.id, merged);
-  res.json({ ok: true, line: pruneLive(merged) });
+  res.json({ ok: true, line: sanitize(merged) });
 });
 
 // Guest submits a join request (open-link flow).
@@ -126,7 +141,7 @@ app.post('/api/line/:id/pending', (req, res) => {
     requestedAt: Date.now(),
   });
   touch(req.params.id);
-  res.json({ ok: true, pendingId, line: pruneLive(line) });
+  res.json({ ok: true, pendingId, line: sanitize(line) });
 });
 
 // Host admits a pending guest. Materializes them as a participant so
@@ -152,7 +167,7 @@ app.post('/api/line/:id/admit', (req, res) => {
     });
   }
   touch(req.params.id);
-  res.json({ ok: true, line: pruneLive(line) });
+  res.json({ ok: true, line: sanitize(line) });
 });
 
 app.post('/api/line/:id/deny', (req, res) => {
@@ -166,7 +181,7 @@ app.post('/api/line/:id/deny', (req, res) => {
   entry.status = 'denied';
   entry.deniedAt = Date.now();
   touch(req.params.id);
-  res.json({ ok: true, line: pruneLive(line) });
+  res.json({ ok: true, line: sanitize(line) });
 });
 
 // Consume a one-time token. For named-invite tokens (no participantId
@@ -197,7 +212,7 @@ app.post('/api/line/:id/consume-onetime', (req, res) => {
   entry.usedAt = Date.now();
   entry.usedCount = (entry.usedCount || 0) + 1;
   touch(req.params.id);
-  res.json({ ok: true, participantId: entry.participantId, line: pruneLive(line) });
+  res.json({ ok: true, participantId: entry.participantId, line: sanitize(line) });
 });
 
 // Presence heartbeat — every few seconds from each tab that's in the call.
@@ -221,6 +236,30 @@ app.post('/api/line/:id/ping', (req, res) => {
   };
   touch(req.params.id);
   res.json({ ok: true });
+});
+
+// Host wipes session-scoped state when starting a fresh call: pending
+// guest requests from previous sessions, stale live presence, and any
+// participants who joined as guests last time. The host's enrolled
+// roster (role !== 'guest') and minted oneTimeTokens stay — those are
+// configured state, not session state.
+//
+// Called once per fresh entry from setup.html → call.html. A mid-call
+// refresh doesn't trigger this; only an explicit "Enter the line"
+// after the host completes setup.
+app.post('/api/line/:id/clear-session', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  line.pending = [];
+  line.live = {};
+  if (Array.isArray(line.participants)) {
+    line.participants = line.participants.filter(p => p.role !== 'guest');
+  }
+  // Also drop signaling inbox for this line so leftover offers can't
+  // pair stale guests with the fresh session.
+  signalInboxes.delete(req.params.id);
+  touch(req.params.id);
+  res.json({ ok: true, line: sanitize(line) });
 });
 
 // ---------- WebRTC signaling ----------

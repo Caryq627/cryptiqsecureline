@@ -962,6 +962,11 @@
               host: true,
               gatePassedAt: Date.now(),
             });
+            // Tell call.html this is a fresh host session, so it wipes
+            // stale pending requests / leftover guests / stale presence
+            // from any previous session on this line. A mid-call refresh
+            // won't have this flag set, so the cleanup won't run then.
+            try { sessionStorage.setItem('cq.freshHostSession', line.id); } catch {}
             cqConnecting.show({ onDone: () => { location.href = callUrl; } });
           },
           onCancel: () => { el.nextBtn.disabled = false; },

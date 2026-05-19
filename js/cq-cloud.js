@@ -97,6 +97,15 @@
       body: { token },
     });
 
+  // Host-only — wipes session-scoped server state (pending guests,
+  // live presence, guest participants from previous sessions) so a
+  // fresh call doesn't inherit zombies. Enrolled attendees stay.
+  const clearSession = (lineId) =>
+    req(`/api/line/${encodeURIComponent(lineId)}/clear-session`, {
+      method: 'POST',
+      body: {},
+    });
+
   // WebRTC signaling — drops a message in the addressed peer's inbox
   // and pulls everything new addressed to us. Used by js/cq-voice.js
   // for SDP offer/answer + ICE candidate trickling between peers.
@@ -195,6 +204,7 @@
     admit,
     deny,
     consumeOneTime,
+    clearSession,
     ping,
     signal,
     pullSignals,

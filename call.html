@@ -804,6 +804,8 @@
         cqLine.setSession({ ...sess, gatePassedAt: Date.now() });
       }
       const cutoff = Date.now() - 6000;
+      const guestCutoff = Date.now() - 30000;
+      const droppedGuests = [];
       tilesById.forEach((t, pid) => {
         if (pid === me.id) return;
         if (t.lastPing && t.lastPing < cutoff && t.state !== 'away') {
@@ -811,7 +813,29 @@
           applyVisual(pid);
           updateRoster();
         }
+        // Drop guests who joined via open-link or one-time link and
+        // haven't pinged in 30s. Enrolled attendees (non-guest role)
+        // stay forever — they're host-configured roster, not session
+        // participants.
+        if (t.lastPing && t.lastPing < guestCutoff) {
+          const p = line.participants.find(x => x.id === pid);
+          if (p && p.role === 'guest') droppedGuests.push(pid);
+        }
       });
+      if (droppedGuests.length) {
+        for (const pid of droppedGuests) {
+          const t = tilesById.get(pid);
+          if (t) { try { t.el.remove(); } catch {} tilesById.delete(pid); }
+        }
+        // Also drop from the local line so re-renders don't re-add them.
+        const fresh = cqLine.getLine(line.id);
+        if (fresh && Array.isArray(fresh.participants)) {
+          fresh.participants = fresh.participants.filter(p => !droppedGuests.includes(p.id));
+          cqLine.saveLine(fresh);
+          line.participants = fresh.participants;
+        }
+        updateRoster();
+      }
     }, 2500);
     // Initial ping so we appear "in call" immediately.
     cqLine.pingInCall(line.id, me.id);
@@ -1201,9 +1225,41 @@
       // host has minted; pushing from their thin view would degrade
       // the cloud's authoritative copy. Non-hosts rely on pulls + the
       // mutation endpoints (pending / admit / consume-onetime / ping).
-      if (isHost) {
-        cqCloud.put(cqLine.getLine(line.id)).catch(() => {});
-      }
+      (async () => {
+        if (isHost) {
+          // Fresh host session? Wipe pending / live / leftover guests
+          // from any previous session on this line BEFORE pushing our
+          // own clean snapshot. setup.html sets this flag when the host
+          // hits "Enter the line" — a mid-call refresh doesn't, so it
+          // won't nuke an in-progress session.
+          let fresh = null;
+          try { fresh = sessionStorage.getItem('cq.freshHostSession'); } catch {}
+          if (fresh === line.id) {
+            try { sessionStorage.removeItem('cq.freshHostSession'); } catch {}
+            await cqCloud.clearSession(line.id).catch(() => {});
+            // Drop our local stale state too so the immediate tile grid
+            // matches the post-clear cloud view.
+            const local = cqLine.getLine(line.id);
+            if (local) {
+              local.pending = [];
+              local.live = {};
+              if (Array.isArray(local.participants)) {
+                local.participants = local.participants.filter(p => p.role !== 'guest');
+              }
+              cqLine.saveLine(local);
+              // Rebuild tile grid to reflect dropped guests.
+              for (const [pid, t] of tilesById) {
+                if (!local.participants.find(p => p.id === pid)) {
+                  try { t.el.remove(); } catch {}
+                  tilesById.delete(pid);
+                }
+              }
+              updateRoster();
+            }
+          }
+          cqCloud.put(cqLine.getLine(line.id)).catch(() => {});
+        }
+      })();
 
       cqCloud.startSync(line.id, (remote) => {
         // mergeIntoLocal already wrote the merged line into localStorage.
