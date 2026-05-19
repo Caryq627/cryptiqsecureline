@@ -53,11 +53,15 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 // Strip stale presence pings on read so clients don't see zombies.
+// live entries can be either a bare timestamp (legacy) or an object
+// { ts, state, muted, handRaised, speaking } from a state-bearing ping.
 const pruneLive = (line) => {
   if (!line || !line.live) return line;
   const cutoff = Date.now() - PRESENCE_TTL_MS;
   for (const pid of Object.keys(line.live)) {
-    if (line.live[pid] < cutoff) delete line.live[pid];
+    const v = line.live[pid];
+    const ts = (v && typeof v === 'object') ? v.ts : v;
+    if (!ts || ts < cutoff) delete line.live[pid];
   }
   return line;
 };
@@ -184,13 +188,24 @@ app.post('/api/line/:id/consume-onetime', (req, res) => {
 });
 
 // Presence heartbeat — every few seconds from each tab that's in the call.
+// Carries the participant's tile state (verified/away/intruder/held),
+// mic mute, hand-raise, and speaking flag so every other device can
+// light up the tile correctly. The server doesn't interpret the state
+// — it just stores+serves, and the receiving client maps it onto its
+// own tile view.
 app.post('/api/line/:id/ping', (req, res) => {
   const line = getLine(req.params.id);
   if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
-  const { participantId } = req.body || {};
+  const { participantId, state, muted, handRaised, speaking } = req.body || {};
   if (!participantId) return res.status(400).json({ ok: false, reason: 'no-pid' });
   if (!line.live) line.live = {};
-  line.live[participantId] = Date.now();
+  line.live[participantId] = {
+    ts: Date.now(),
+    state: state || 'verified',
+    muted: !!muted,
+    handRaised: !!handRaised,
+    speaking: !!speaking,
+  };
   touch(req.params.id);
   res.json({ ok: true });
 });

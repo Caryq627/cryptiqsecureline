@@ -1171,11 +1171,38 @@
         for (const p of (fresh.participants || [])) {
           if (!tilesById.has(p.id)) buildTile(p);
         }
+        // Apply remote tile state — this is what makes guests appear
+        // as VERIFIED + lights the speaking glow on the host's view.
+        // Entries on remote.live are { ts, state, muted, handRaised,
+        // speaking }. Anything missing (no entry, or a legacy bare
+        // number) means we don't know — leave it to the away-sweeper.
+        const liveMap = (remote && remote.live) || {};
+        for (const [pid, v] of Object.entries(liveMap)) {
+          if (pid === me.id) continue;
+          if (!v || typeof v !== 'object') continue;
+          const t = tilesById.get(pid);
+          if (!t) continue;
+          t.lastPing = Date.now();
+          setTileState(pid, v.state || 'verified', {
+            muted: !!v.muted,
+            handRaised: !!v.handRaised,
+            speaking: !!v.speaking,
+          });
+        }
       });
 
-      // Presence heartbeat — server prunes anyone we haven't pinged in
-      // ~12s, so 4s cadence keeps us solidly visible.
-      setInterval(() => cqCloud.ping(line.id, me.id).catch(() => {}), 4000);
+      // Presence heartbeat with full state — server prunes anyone we
+      // haven't pinged in ~12s, so 2s cadence keeps us solidly visible
+      // AND lets the speaking-glow propagate to other devices within
+      // ~4s end-to-end (1 ping + 1 poll round-trip).
+      setInterval(() => {
+        cqCloud.ping(line.id, me.id, {
+          state: myLocal.liveness,
+          muted: !!myLocal.muted,
+          handRaised: !!myLocal.handRaised,
+          speaking: !!myLocal.speaking,
+        }).catch(() => {});
+      }, 2000);
     }
 
     // ---------- Share-link sheet (in-call) ----------

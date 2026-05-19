@@ -97,10 +97,14 @@
       body: { token },
     });
 
-  const ping = (lineId, participantId) =>
+  // ping(lineId, participantId, state?) — heartbeat + tile state.
+  // state is { state, muted, handRaised, speaking } so other devices
+  // can render this participant's tile correctly. All fields optional;
+  // default state is 'verified' on the server side.
+  const ping = (lineId, participantId, state) =>
     req(`/api/line/${encodeURIComponent(lineId)}/ping`, {
       method: 'POST',
-      body: { participantId },
+      body: { participantId, ...(state || {}) },
     });
 
   // ---------- polling ----------
