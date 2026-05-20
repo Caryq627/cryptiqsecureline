@@ -167,7 +167,10 @@
           <div class="reticle"></div>
           <div class="scanline"></div>
         </div>
-        <div class="viewfinder-status" id="cap-status">CENTER FACE IN RETICLE</div>
+        <div class="viewfinder-status" id="cap-status">CENTER FACE THEN TAP CAPTURE</div>
+        <button class="btn btn-ghost btn-block" id="cap-capture" type="button" disabled style="margin-top:6px;">
+          <span data-icon="camera"></span> Capture photo
+        </button>
       </div>
 
       <!-- Upload mode pane: file picker auto-opens on tab tap. After upload,
@@ -509,6 +512,7 @@
       name:    $('cap-name'),
       save:    $('cap-save'),
       cancel:  $('cap-cancel'),
+      capture: $('cap-capture'),
       viewfinder: $('cap-viewfinder'),
       modeTabs: $('cap-mode'),
       cameraPane: $('cap-camera-pane'),
@@ -671,6 +675,13 @@
       cap.name.value = '';
       cap.save.disabled = true;
       capFrame = null;
+      // Reset the manual-capture button — re-visible + disabled until
+      // a face is detected by the auto-loop.
+      if (cap.capture) {
+        cap.capture.style.display = '';
+        cap.capture.disabled = true;
+      }
+      capFaceReady = false;
       setMode('camera');
     };
 
@@ -824,6 +835,15 @@
       stopCameraMode();
     };
 
+    // Face-presence detection ONLY — light loop that just counts faces in
+    // frame to enable / disable the Capture button. The actual capture
+    // happens on user click (see cap.capture handler below). This mirrors
+    // the demo's cqEnroll flow, which is reliable. The old loop auto-
+    // fired 2D liveness on every tick — that's a verification check, not
+    // an enrollment check, and it failed for harmless reasons (slight
+    // movement, lighting, single-frame liveness ambiguity) that have
+    // nothing to do with whether the photo is a usable reference.
+    let capFaceReady = false;
     const startAutoCheck = () => {
       let checking = false;
       capCheckTimer = setInterval(async () => {
@@ -831,33 +851,85 @@
         checking = true;
         try {
           const faceN = await cqFacetec.detectFaceCount(cap.video);
+          if (faceN === null) {
+            // Detector unsupported on this browser — enable Capture
+            // optimistically; verifyEnrollmentPhoto on click is the
+            // real gate.
+            capFaceReady = true;
+            cap.capture.disabled = false;
+            cap.status.textContent = 'TAP CAPTURE WHEN READY';
+            cap.status.className = 'viewfinder-status is-verifying';
+            cap.viewfinder.className = 'viewfinder is-verifying';
+            return;
+          }
           if (faceN === 0) {
-            cap.status.textContent = 'NO FACE DETECTED';
+            capFaceReady = false;
+            cap.capture.disabled = true;
+            cap.status.textContent = 'CENTER FACE IN RETICLE';
             cap.status.className = 'viewfinder-status is-verifying';
             cap.viewfinder.className = 'viewfinder is-verifying';
             return;
           }
           if (faceN > 1) {
-            cap.status.textContent = 'MULTIPLE FACES — CAPTURE PAUSED';
+            capFaceReady = false;
+            cap.capture.disabled = true;
+            cap.status.textContent = 'MULTIPLE FACES — STEP AWAY';
             cap.status.className = 'viewfinder-status is-denied';
             cap.viewfinder.className = 'viewfinder is-denied';
             return;
           }
-          cap.status.textContent = 'VERIFYING IDENTITY…';
+          capFaceReady = true;
+          cap.capture.disabled = false;
+          cap.status.textContent = 'READY · TAP CAPTURE';
+          cap.status.className = 'viewfinder-status is-verified';
+          cap.viewfinder.className = 'viewfinder is-verified';
+        } finally { checking = false; }
+      }, 700);
+    };
+
+    // Error copy for verifyEnrollmentPhoto verdicts.
+    const ENROLL_ERRORS = {
+      'no-face-detected': 'NO FACE DETECTED — TRY BETTER LIGHTING',
+      'too-many-faces':   'MULTIPLE FACES — STEP AWAY',
+      'eyes-obstructed':  'EYES OBSTRUCTED — REMOVE GLASSES / HAT',
+      'mouth-obstructed': 'MOUTH OBSTRUCTED — REMOVE MASK',
+      'face-too-small':   'MOVE CLOSER TO THE CAMERA',
+      'face-off-center':  'CENTER YOUR FACE',
+      'server-error':     'VERIFY SERVER UNREACHABLE — RETRY',
+    };
+
+    cap.capture.addEventListener('click', async () => {
+      if (!capFaceReady || capMode !== 'camera') return;
+      cap.capture.disabled = true;
+      cap.status.textContent = 'CHECKING PHOTO…';
+      cap.status.className = 'viewfinder-status is-verifying';
+      cap.viewfinder.className = 'viewfinder is-verifying';
+      // 720px tight crop around the face — reliable input for server-side
+      // feature extraction (same size cqEnroll uses).
+      const frame = await cqFacetec.captureAroundFace(cap.video, 720);
+      const verdict = await cqFacetec.verifyEnrollmentPhoto(frame);
+      if (!verdict.ok) {
+        const msg = ENROLL_ERRORS[verdict.reason] || 'PHOTO REJECTED — TRY AGAIN';
+        cap.status.textContent = msg;
+        cap.status.className = 'viewfinder-status is-denied';
+        cap.viewfinder.className = 'viewfinder is-denied';
+        // Brief hold on the error then re-arm so the auto-detect loop
+        // re-enables Capture as soon as a clean face is back in frame.
+        setTimeout(() => {
+          cap.status.textContent = 'CENTER FACE THEN TAP CAPTURE';
           cap.status.className = 'viewfinder-status is-verifying';
           cap.viewfinder.className = 'viewfinder is-verifying';
-          const r = await cqFacetec.gate(cap.video, null);
-          if (r.ok) {
-            capFrame = r.frame;
-            cap.status.textContent = 'FACE CAPTURED · ADD A NAME';
-            cap.status.className = 'viewfinder-status is-verified';
-            cap.viewfinder.className = 'viewfinder is-verified';
-            clearInterval(capCheckTimer); capCheckTimer = null;
-            cap.save.disabled = !cap.name.value.trim();
-          }
-        } finally { checking = false; }
-      }, 900);
-    };
+        }, 1800);
+        return;
+      }
+      capFrame = frame;
+      cap.status.textContent = 'FACE CAPTURED · ADD A NAME';
+      cap.status.className = 'viewfinder-status is-verified';
+      cap.viewfinder.className = 'viewfinder is-verified';
+      cap.capture.style.display = 'none';
+      if (capCheckTimer) { clearInterval(capCheckTimer); capCheckTimer = null; }
+      cap.save.disabled = !cap.name.value.trim();
+    });
 
     cap.name.addEventListener('input', () => {
       cap.save.disabled = !(capFrame && cap.name.value.trim());

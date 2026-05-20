@@ -72,6 +72,9 @@
             <div class="scanline"></div>
           </div>
           <div class="viewfinder-status" id="g-status">STARTING CAMERA…</div>
+          <button class="btn btn-ghost btn-block" id="g-capture" type="button" disabled style="margin-top:6px;">
+            <span data-icon="camera"></span> Capture photo
+          </button>
         </div>
 
         <div id="g-upload-pane" class="hidden">
@@ -238,6 +241,9 @@
       if (mode === 'camera') {
         cap.cameraPane.classList.remove('hidden');
         cap.uploadPane.classList.add('hidden');
+        // Reset manual-capture button on every camera-mode entry.
+        const cb = document.getElementById('g-capture');
+        if (cb) { cb.style.display = ''; cb.disabled = true; }
         startCameraMode();
       } else {
         cap.cameraPane.classList.add('hidden');
@@ -296,48 +302,91 @@
       cap.submitBtn.disabled = !cap.nameEl.value.trim();
     };
 
+    // Face-presence detection ONLY — light loop that just toggles the
+    // Capture button. Reliable enrollment uses manual capture + a
+    // server roundtrip via verifyEnrollmentPhoto. The old loop auto-
+    // fired 2D liveness, which is the wrong test for enrollment and
+    // failed on harmless conditions.
+    const captureBtn = document.getElementById('g-capture');
+    let camFaceReady = false;
+    const ENROLL_ERRORS = {
+      'no-face-detected': 'NO FACE DETECTED — TRY BETTER LIGHTING',
+      'too-many-faces':   'MULTIPLE FACES — STEP AWAY',
+      'eyes-obstructed':  'EYES OBSTRUCTED — REMOVE GLASSES / HAT',
+      'mouth-obstructed': 'MOUTH OBSTRUCTED — REMOVE MASK',
+      'face-too-small':   'MOVE CLOSER TO THE CAMERA',
+      'face-off-center':  'CENTER YOUR FACE',
+      'server-error':     'VERIFY SERVER UNREACHABLE — RETRY',
+    };
+
     const startAutoCheck = () => {
-      const gateStart = Date.now();
-      const GRACE = 2500;
       let checking = false;
       cap.checkTimer = setInterval(async () => {
         if (checking || cap.frame || cap.mode !== 'camera') return;
         checking = true;
-        const inGrace = Date.now() - gateStart < GRACE;
         try {
           const faceN = await cqFacetec.detectFaceCount(cap.video);
+          if (faceN === null) {
+            camFaceReady = true;
+            captureBtn.disabled = false;
+            cap.status.textContent = 'TAP CAPTURE WHEN READY';
+            cap.status.className = 'viewfinder-status is-verifying';
+            cap.vf.className = 'viewfinder is-verifying';
+            return;
+          }
           if (faceN === 0) {
-            cap.status.textContent = inGrace ? 'CENTER FACE IN RETICLE' : 'NO FACE DETECTED';
+            camFaceReady = false;
+            captureBtn.disabled = true;
+            cap.status.textContent = 'CENTER FACE IN RETICLE';
             cap.status.className = 'viewfinder-status is-verifying';
             cap.vf.className = 'viewfinder is-verifying';
             return;
           }
           if (faceN > 1) {
-            if (inGrace) {
-              cap.status.textContent = 'CENTER FACE IN RETICLE';
-              cap.status.className = 'viewfinder-status is-verifying';
-              cap.vf.className = 'viewfinder is-verifying';
-            } else {
-              cap.status.textContent = 'MULTIPLE FACES — CAPTURE PAUSED';
-              cap.status.className = 'viewfinder-status is-denied';
-              cap.vf.className = 'viewfinder is-denied';
-            }
+            camFaceReady = false;
+            captureBtn.disabled = true;
+            cap.status.textContent = 'MULTIPLE FACES — STEP AWAY';
+            cap.status.className = 'viewfinder-status is-denied';
+            cap.vf.className = 'viewfinder is-denied';
             return;
           }
-          cap.status.textContent = 'VERIFYING IDENTITY…';
-          cap.vf.className = 'viewfinder is-verifying';
-          const r = await cqFacetec.gate(cap.video, null);
-          if (r.ok) {
-            cap.frame = r.frame;
-            cap.status.textContent = 'FACE CAPTURED · ADD A NAME';
-            cap.status.className = 'viewfinder-status is-verified';
-            cap.vf.className = 'viewfinder is-verified';
-            clearInterval(cap.checkTimer); cap.checkTimer = null;
-            cap.submitBtn.disabled = !cap.nameEl.value.trim();
-          }
+          camFaceReady = true;
+          captureBtn.disabled = false;
+          cap.status.textContent = 'READY · TAP CAPTURE';
+          cap.status.className = 'viewfinder-status is-verified';
+          cap.vf.className = 'viewfinder is-verified';
         } finally { checking = false; }
-      }, 900);
+      }, 700);
     };
+
+    captureBtn.addEventListener('click', async () => {
+      if (!camFaceReady || cap.mode !== 'camera') return;
+      captureBtn.disabled = true;
+      cap.status.textContent = 'CHECKING PHOTO…';
+      cap.status.className = 'viewfinder-status is-verifying';
+      cap.vf.className = 'viewfinder is-verifying';
+      const frame = await cqFacetec.captureAroundFace(cap.video, 720);
+      const verdict = await cqFacetec.verifyEnrollmentPhoto(frame);
+      if (!verdict.ok) {
+        const msg = ENROLL_ERRORS[verdict.reason] || 'PHOTO REJECTED — TRY AGAIN';
+        cap.status.textContent = msg;
+        cap.status.className = 'viewfinder-status is-denied';
+        cap.vf.className = 'viewfinder is-denied';
+        setTimeout(() => {
+          cap.status.textContent = 'CENTER FACE THEN TAP CAPTURE';
+          cap.status.className = 'viewfinder-status is-verifying';
+          cap.vf.className = 'viewfinder is-verifying';
+        }, 1800);
+        return;
+      }
+      cap.frame = frame;
+      cap.status.textContent = 'FACE CAPTURED · ADD A NAME';
+      cap.status.className = 'viewfinder-status is-verified';
+      cap.vf.className = 'viewfinder is-verified';
+      captureBtn.style.display = 'none';
+      if (cap.checkTimer) { clearInterval(cap.checkTimer); cap.checkTimer = null; }
+      cap.submitBtn.disabled = !cap.nameEl.value.trim();
+    });
 
     document.querySelectorAll('#g-mode .mode-tab').forEach(b => {
       b.addEventListener('click', () => setMode(b.dataset.mode));
