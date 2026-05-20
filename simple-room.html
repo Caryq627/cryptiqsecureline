@@ -268,6 +268,7 @@
         if (!wantIds.has(pid)) {
           try { t.el.remove(); } catch {}
           tilesById.delete(pid);
+          if (typeof detachPeerAudio === 'function') detachPeerAudio(pid);
         }
       }
       updateRoster();
@@ -345,6 +346,14 @@
       });
 
       // WebRTC mesh — direct peer audio between every live participant.
+      // The onPeerAudio hook fires when a remote peer's audio stream
+      // arrives. We use it to:
+      //   (a) nest that peer's <audio> element INSIDE their tile so the
+      //       audio is semantically anchored to the person, and
+      //   (b) attach a local audio-activity analyser to the incoming
+      //       stream — that drives the tile's "speaking" glow off the
+      //       real audio everyone is actually hearing, not off a 2s
+      //       polling ping that lags behind the voice.
       if (voiceRoom) { try { voiceRoom.close(); } catch {} voiceRoom = null; }
       if (window.cqVoice) {
         const peerPids = () => {
@@ -361,8 +370,61 @@
           }
           return out;
         };
-        voiceRoom = cqVoice.createRoom({ lineId: lineCode, mePid, localStream: audioOnlyStream, peerPids });
+        voiceRoom = cqVoice.createRoom({
+          lineId: lineCode,
+          mePid,
+          localStream: audioOnlyStream,
+          peerPids,
+          onPeerAudio: attachPeerAudio,
+        });
       }
+    };
+
+    // ---------- per-peer audio analyser ----------
+    //
+    // Map of peerPid → stop() that tears down the VAD loop. Speaking is
+    // detected directly from each peer's incoming WebRTC stream so the
+    // tile pulse lights the instant you hear them, with no ping
+    // round-trip latency. Synced across devices for free — every
+    // device hears the same audio, so every device fires the analyser
+    // at the same moment for the same speaker.
+    const peerAnalysers = new Map();
+    const peerSpeakingFromAudio = new Map(); // pid → bool
+
+    const attachPeerAudio = (peerPid, audioEl) => {
+      const t = tilesById.get(peerPid);
+      if (t && audioEl) {
+        // Nest the <audio> inside the tile DOM. Browsers don't do
+        // positional audio from DOM placement, but anchoring it here
+        // makes "this audio comes from this card" inspectable + it
+        // moves with the tile if the grid reflows.
+        audioEl.controls = false;
+        audioEl.style.display = 'none';
+        try { t.el.appendChild(audioEl); } catch {}
+      }
+      // Replace any previous analyser for this peer (e.g. PC was
+      // recreated on a reconnect).
+      const prev = peerAnalysers.get(peerPid);
+      if (prev && prev.stop) { try { prev.stop(); } catch {} }
+      const stream = audioEl && audioEl.srcObject;
+      if (!stream || !stream.getAudioTracks || !stream.getAudioTracks().length) return;
+      const stop = cqFacetec.startVoiceActivity(stream, (speaking) => {
+        const prevSpk = peerSpeakingFromAudio.get(peerPid);
+        if (prevSpk === speaking) return;
+        peerSpeakingFromAudio.set(peerPid, speaking);
+        const tile = tilesById.get(peerPid);
+        if (!tile) return;
+        const baseState = tile.state === 'away' ? 'away' : 'verified';
+        setTileState(peerPid, baseState, { muted: tile.muted, speaking });
+      });
+      peerAnalysers.set(peerPid, { stop });
+    };
+
+    const detachPeerAudio = (peerPid) => {
+      const a = peerAnalysers.get(peerPid);
+      if (a && a.stop) { try { a.stop(); } catch {} }
+      peerAnalysers.delete(peerPid);
+      peerSpeakingFromAudio.delete(peerPid);
     };
 
     // ---------- active monitoring toggle ----------
@@ -619,7 +681,14 @@
         if (!v || typeof v !== 'object') continue;
         const t = tilesById.get(pid);
         if (!t) continue;
-        setTileState(pid, v.state || 'verified', { muted: !!v.muted, speaking: !!v.speaking });
+        // If we have a local audio analyser for this peer, the speaking
+        // flag from the server ping is stale by up to 2s — skip it and
+        // let the analyser drive the pulse directly. Otherwise fall
+        // back to the ping's flag (covers the brief window after
+        // entering the room before the WebRTC stream connects).
+        const meta = { muted: !!v.muted };
+        if (!peerAnalysers.has(pid)) meta.speaking = !!v.speaking;
+        setTileState(pid, v.state || 'verified', meta);
       }
     };
 
@@ -747,6 +816,10 @@
       try { voiceRoom && voiceRoom.close(); } catch {}
       try { stopVad && stopVad(); } catch {}
       try { stopLiveness && stopLiveness(); } catch {}
+      try {
+        for (const [, a] of peerAnalysers) { try { a.stop && a.stop(); } catch {} }
+        peerAnalysers.clear();
+      } catch {}
       try {
         if (selfStream) selfStream.getTracks().forEach(t => t.stop());
       } catch {}
