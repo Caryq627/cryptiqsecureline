@@ -602,6 +602,21 @@
 
     const stopSync = cqCloud.startSync(lineCode, (remote) => {
       line = remote;
+      // Diagnostic: surface admit-relevant state on every sync tick so
+      // a "request was sent but I never saw it" report can be debugged
+      // from DevTools without redeploying.
+      const pendingCount = Array.isArray(remote.pending)
+        ? remote.pending.filter(p => p.status === 'pending').length
+        : 0;
+      try {
+        console.log('[room] sync', {
+          lineCode, mePid,
+          createdBy: remote.createdBy,
+          isHost: remote.createdBy === mePid,
+          participants: (remote.participants || []).length,
+          pending: pendingCount,
+        });
+      } catch {}
       reconcileTiles();
       applyRemoteLiveStates();
       renderAdmit();

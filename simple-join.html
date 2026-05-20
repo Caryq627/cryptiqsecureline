@@ -136,7 +136,7 @@
     const requestBtn = document.getElementById('request-btn');
     const lineNameEl = document.getElementById('line-name');
 
-    if (!lineCode || !/^[A-Z0-9]{4,16}$/.test(lineCode)) {
+    if (!lineCode || !/^[A-Z0-9]{4,32}$/.test(lineCode)) {
       showCard('bad');
       throw new Error('no-code');
     }

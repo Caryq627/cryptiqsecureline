@@ -111,11 +111,12 @@ app.post('/api/simple/start', (req, res) => {
   const cleanName = String(name || '').trim().slice(0, 80);
   if (!cleanName) return res.status(400).json({ ok: false, reason: 'no-name' });
 
-  // 6 chars from 30-char alphabet = 729M combinations. Retry a few
-  // times in case of (vanishingly unlikely) collision.
+  // 20 chars from 30-char alphabet ≈ 3.5e29 combinations. Collisions
+  // are statistically impossible at any realistic concurrency level,
+  // but we still retry a few times defensively.
   let code = null;
   for (let i = 0; i < 25; i++) {
-    const c = randId(6);
+    const c = randId(20);
     if (!lines.has(c)) { code = c; break; }
   }
   if (!code) return res.status(503).json({ ok: false, reason: 'code-collision' });

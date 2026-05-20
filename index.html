@@ -246,8 +246,8 @@
       if (!text) text = prompt('Paste your secure line link or invite code') || '';
       text = text.trim();
       if (!text) return;
-      // Plain code, e.g. "A7K9PX"
-      if (/^[A-Za-z0-9]{4,16}$/.test(text)) {
+      // Plain code, e.g. "A7K9PX..." (simple-flow codes are 20 chars)
+      if (/^[A-Za-z0-9]{4,32}$/.test(text)) {
         location.href = `simple-join.html?c=${encodeURIComponent(text.toUpperCase())}`;
         return;
       }

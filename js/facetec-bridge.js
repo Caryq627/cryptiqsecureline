@@ -612,9 +612,17 @@
       tickMs = config.tickMs,
       cb = () => {},
       // Grace window after the loop starts where any "bad" state is shown
-      // as 'verifying' instead of 'away'/'intruder'. Lets the user settle
-      // in after the face-gate passed without a false first-tick alarm.
-      graceMs = 3500,
+      // as 'verifying' instead of 'away'/'intruder'. Long enough that the
+      // initial near→mid→far zoom-cycle gets a full rotation before we
+      // commit to a definitive verdict, so a far-zoom miss on tick 1
+      // doesn't strobe the UI orange before the user's even settled.
+      graceMs = 10000,
+      // Once we've emitted 'verified', stay verified through this window
+      // of subsequent 'verifying' ticks (e.g. one zoom out of the five
+      // came back empty). Only definite signals (multi-tick away,
+      // identity mismatch) push us out. Eliminates the verified↔verifying
+      // flap that the rotating-zoom strategy otherwise produces.
+      stickyVerifiedMs = 15000,
     } = opts;
 
     let alive = true;
@@ -622,16 +630,36 @@
     let intruderStreak = 0;
     let livenessFailStreak = 0;
     let lastState = 'verifying';
+    let lastVerifiedAt = 0;
     let forced = null; // { state, until } — demo override
     let zoomCursor = 0;  // rotates 0..2 to cycle far/mid/near each tick
     const startedAt = Date.now();
 
     const emit = (state, meta) => {
-      const inGrace = Date.now() - startedAt < graceMs;
+      const now = Date.now();
+      const inGrace = now - startedAt < graceMs;
+      const stickyVerified = lastVerifiedAt && (now - lastVerifiedAt < stickyVerifiedMs);
+
+      // 1. Grace period suppresses early "bad" verdicts as 'verifying'.
       if (inGrace && (state === 'away' || state === 'intruder')) {
         cb('verifying', Object.assign({ grace: true }, meta || {}));
         lastState = 'verifying';
         return;
+      }
+      // 2. Sticky verified: once we've seen a real PASS, single-tick
+      //    'verifying' returns (one zoom missed, server hiccup, etc) don't
+      //    drop the user back to orange. We hold 'verified' for up to
+      //    stickyVerifiedMs of intermediate fails. Definitive signals
+      //    (away/intruder) still push through.
+      if (state === 'verifying' && (inGrace || stickyVerified)) {
+        cb('verified', Object.assign({ sticky: true }, meta || {}));
+        lastState = 'verified';
+        return;
+      }
+      // 3. Real PASS: stamp the timestamp so subsequent fails get the
+      //    sticky treatment.
+      if (state === 'verified') {
+        lastVerifiedAt = now;
       }
       cb(state, meta || {});
       lastState = state;
