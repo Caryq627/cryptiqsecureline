@@ -35,11 +35,18 @@
   // ---------- low-level fetch ----------
 
   const req = async (path, opts = {}) => {
+    // Hard timeout so a slow Render dyno (cold start, sleeping free
+    // tier) doesn't silently hang a ping for 30+ seconds. Default 6s,
+    // overridable per-call via opts.timeoutMs.
+    const timeoutMs = (opts.timeoutMs != null) ? opts.timeoutMs : 6000;
+    const ctrl = ('AbortController' in window) ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch {} }, timeoutMs) : null;
     try {
       const r = await fetch(url(path), {
         method: opts.method || 'GET',
         headers: { 'content-type': 'application/json' },
         body: opts.body ? JSON.stringify(opts.body) : undefined,
+        signal: ctrl ? ctrl.signal : undefined,
         // No credentials — the API is open and stateless per request.
       });
       if (!r.ok) {
@@ -49,9 +56,11 @@
       }
       return r.json();
     } catch (e) {
-      // Network failure: surface as a soft error so callers can fall
-      // back to localStorage-only mode (single-browser demo still works).
-      return { ok: false, reason: 'network', error: String(e) };
+      // Network failure or aborted by timeout: surface as a soft error.
+      const aborted = e && (e.name === 'AbortError');
+      return { ok: false, reason: aborted ? 'timeout' : 'network', error: String(e) };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   };
 

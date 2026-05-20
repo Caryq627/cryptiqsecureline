@@ -668,15 +668,12 @@
     sendPing();
     const pingTimer = setInterval(sendPing, 2000);
 
-    // Backup admit poller — startSync only fires onUpdate when the
-    // JSON snapshot changes, which is correct but could theoretically
-    // miss a change if two ticks land on identical-serialized states.
-    // This independent poll just refreshes our `line` and re-renders
-    // the admit strip every 2s. Cheap, defensive, and the diagnostic
-    // log here is what to look at when a guest's request "vanishes":
-    // if the count goes from 0 → 1 in this log, the channel works
-    // and the bug is elsewhere; if it never goes up, the request
-    // didn't reach this line on the server.
+    // Backup poller — independent of startSync. Runs every 2s and
+    // refreshes everything (line, tile states, admit strip). This is
+    // the belt-and-suspenders that keeps every device's view in sync
+    // even if startSync's snapshot-diff misses a tick or a network
+    // blip drops a single ping. Without this, the away-sweeper can
+    // trip on stale lastPing values and flap tiles to orange.
     const admitPollTimer = setInterval(async () => {
       try {
         const r = await cqCloud.fetch(lineCode);
@@ -696,19 +693,30 @@
             });
           } catch {}
         }
+        // Pick up arrivals/departures + refresh tile states from the
+        // server's live map. setTileState updates each tile's lastPing
+        // so the away-sweeper sees fresh data on the next sweep.
+        reconcileTiles();
+        applyRemoteLiveStates();
         renderAdmit();
       } catch {}
     }, 2000);
 
-    // Away-sweeper: tile goes to AWAY after 6s of no ping. Guest tiles
-    // get dropped after 60s of staleness (mirrors call.html behavior).
+    // Away-sweeper: tile goes to AWAY when a participant hasn't been
+    // seen in line.live for a while. Window widened from 6s → 15s so
+    // a single slow ping (Render free-tier dyno warmup, brief network
+    // hiccup) doesn't flap a verified tile to orange. With pings
+    // every 2s, 15s allows ~7 misses before we mark them AWAY — which
+    // genuinely means "they're not there" rather than "the network
+    // burped once". Guest tiles still drop entirely after 60s.
     setInterval(() => {
-      const cutoff = Date.now() - 6000;
+      const cutoff = Date.now() - 15000;
       const guestCutoff = Date.now() - 60000;
       const droppedGuests = [];
       tilesById.forEach((t, pid) => {
         if (pid === mePid) return;
         if (t.lastPing && t.lastPing < cutoff && t.state !== 'away') {
+          try { console.log('[room] sweeper → away', { pid, ageMs: Date.now() - t.lastPing }); } catch {}
           setTileState(pid, 'away', { speaking: false });
         }
         if (t.lastPing && t.lastPing < guestCutoff && line) {
