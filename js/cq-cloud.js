@@ -36,9 +36,12 @@
 
   const req = async (path, opts = {}) => {
     // Hard timeout so a slow Render dyno (cold start, sleeping free
-    // tier) doesn't silently hang a ping for 30+ seconds. Default 6s,
-    // overridable per-call via opts.timeoutMs.
-    const timeoutMs = (opts.timeoutMs != null) ? opts.timeoutMs : 6000;
+    // tier) doesn't silently hang the request forever. Polls use a
+    // short default (8s — they retry every cycle anyway). User-
+    // initiated writes (admit / deny / transfer / pending) pass a
+    // longer per-call timeoutMs (25s) so a cold-start dyno has time
+    // to wake up and process the action.
+    const timeoutMs = (opts.timeoutMs != null) ? opts.timeoutMs : 8000;
     const ctrl = ('AbortController' in window) ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch {} }, timeoutMs) : null;
     try {
@@ -82,10 +85,17 @@
 
   const fetchLine = (lineId) => req(`/api/line/${encodeURIComponent(lineId)}`);
 
+  // User-initiated writes get a generous timeout (25s) so a Render
+  // free-tier cold-start can complete the request instead of failing
+  // silently and leaving the admit flow half-done. Polls keep the
+  // shorter default (~8s) because they retry every tick.
+  const WRITE_TIMEOUT_MS = 25000;
+
   const addPending = (lineId, { openToken, name, photo }) =>
     req(`/api/line/${encodeURIComponent(lineId)}/pending`, {
       method: 'POST',
       body: { openToken, name, photo },
+      timeoutMs: WRITE_TIMEOUT_MS,
     });
 
   // Host auth happens server-side via EITHER:
@@ -99,12 +109,14 @@
     req(`/api/line/${encodeURIComponent(lineId)}/admit`, {
       method: 'POST',
       body: { pendingId, hostToken, callerParticipantId },
+      timeoutMs: WRITE_TIMEOUT_MS,
     });
 
   const deny = (lineId, pendingId, hostToken, callerParticipantId) =>
     req(`/api/line/${encodeURIComponent(lineId)}/deny`, {
       method: 'POST',
       body: { pendingId, hostToken, callerParticipantId },
+      timeoutMs: WRITE_TIMEOUT_MS,
     });
 
   // Current host hands the host role to another participant. The
@@ -115,6 +127,7 @@
     req(`/api/line/${encodeURIComponent(lineId)}/transfer-host`, {
       method: 'POST',
       body: { fromPid, toPid, hostToken },
+      timeoutMs: WRITE_TIMEOUT_MS,
     });
 
   // Simple-flow: host POSTs name + photo once, gets a short shareable
@@ -123,12 +136,14 @@
     req('/api/simple/start', {
       method: 'POST',
       body: { name, photo },
+      timeoutMs: WRITE_TIMEOUT_MS,
     });
 
   const consumeOneTime = (lineId, token) =>
     req(`/api/line/${encodeURIComponent(lineId)}/consume-onetime`, {
       method: 'POST',
       body: { token },
+      timeoutMs: WRITE_TIMEOUT_MS,
     });
 
   // Host-only — wipes session-scoped server state (pending guests,
@@ -138,6 +153,7 @@
     req(`/api/line/${encodeURIComponent(lineId)}/clear-session`, {
       method: 'POST',
       body: {},
+      timeoutMs: WRITE_TIMEOUT_MS,
     });
 
   // WebRTC signaling — drops a message in the addressed peer's inbox

@@ -12,33 +12,38 @@
   <style>
     /* Simple-room-specific tweaks. Most styles live in css/cryptiq.css. */
     .simple-share {
-      display: flex; align-items: center; gap: 8px;
+      display: flex; align-items: center; gap: 12px;
       padding: 10px 14px;
       background: var(--accent-soft);
       border-top: 1px solid var(--accent-line);
       border-bottom: 1px solid var(--accent-line);
       animation: cq-fade-in 0.18s ease;
     }
-    .simple-share .label {
-      font-family: var(--font-mono); font-size: 10px;
-      letter-spacing: 0.16em; color: var(--accent);
-    }
-    .simple-share .url {
+    .simple-share .info {
       flex: 1; min-width: 0;
-      font-family: var(--font-mono); font-size: 12px;
-      color: var(--fg);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      background: var(--bg-deep);
-      border: 1px solid var(--surface-border);
-      border-radius: 6px;
-      padding: 6px 10px;
+      display: flex; flex-direction: column; gap: 2px;
     }
-    .simple-share .code {
+    .simple-share .title {
+      font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 0.18em; color: var(--accent);
+      text-transform: uppercase;
+    }
+    .simple-share .hint {
+      font-size: 12px; color: var(--fg-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .simple-share .hint .code {
       font-family: var(--font-mono);
       font-weight: 600;
-      color: var(--accent);
-      font-size: 13px;
-      letter-spacing: 0.12em;
+      color: var(--fg);
+      letter-spacing: 0.08em;
+    }
+    .simple-share .actions { display: flex; gap: 6px; flex-shrink: 0; }
+    @media (max-width: 540px) {
+      .simple-share { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+      .simple-share .info { text-align: center; }
+      .simple-share .actions { justify-content: center; }
+      .simple-share .actions .btn { flex: 1; }
     }
 
     /* Top-centered LookAway-style mini viewfinder. Flush with the very
@@ -692,29 +697,36 @@
     let shareOpen = false;
     const renderShare = () => {
       if (!shareOpen) { shareSlot.innerHTML = ''; return; }
+      // No visible URL — fits cleanly on mobile and the link is in
+      // the user's clipboard the moment they tap Copy. The code stays
+      // visible (for users who want to read it aloud) but stays
+      // inside the hint line, not a stretched URL box.
       shareSlot.innerHTML = `
         <div class="simple-share" role="region" aria-label="Invite link">
-          <span class="label">CODE</span>
-          <span class="code">${escapeHtml(lineCode)}</span>
-          <div class="url" title="${escapeHtml(shareUrl)}">${escapeHtml(shareUrl)}</div>
-          <button class="btn btn-primary btn-sm" data-role="copy" type="button">
-            <span data-icon="copy"></span> Copy
-          </button>
-          <button class="btn btn-ghost btn-sm" data-role="close" type="button" aria-label="Close">✕</button>
+          <div class="info">
+            <div class="title">Share invite</div>
+            <div class="hint">Anyone with this link can request to join · code <span class="code">${escapeHtml(lineCode)}</span></div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary btn-sm" data-role="copy" type="button">
+              <span data-icon="copy"></span> Copy link
+            </button>
+            <button class="btn btn-ghost btn-sm" data-role="close" type="button" aria-label="Close">✕</button>
+          </div>
         </div>
       `;
       cqIconsHydrate(shareSlot);
       shareSlot.querySelector('[data-role="copy"]').addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(shareUrl);
-          banner('Link copied — share it with anyone you want in the call');
+          banner('Invite link copied — share anywhere');
         } catch {
           // Fallback: select-and-copy
           const ta = document.createElement('textarea');
           ta.value = shareUrl;
           ta.style.position = 'fixed'; ta.style.opacity = '0';
           document.body.appendChild(ta); ta.select();
-          try { document.execCommand('copy'); banner('Link copied'); } catch { banner('Couldn\'t copy — long-press to copy', 'warn'); }
+          try { document.execCommand('copy'); banner('Invite link copied'); } catch { banner('Couldn\'t copy — long-press to copy', 'warn'); }
           ta.remove();
         }
       });
@@ -830,24 +842,48 @@
         </div>
       `;
       cqIconsHydrate(admitSlot);
-      admitSlot.querySelector('[data-role="admit"]').addEventListener('click', async () => {
-        // Optimistically drop from local pending so the strip clears.
+      const admitBtn = admitSlot.querySelector('[data-role="admit"]');
+      const denyBtn  = admitSlot.querySelector('[data-role="deny"]');
+
+      admitBtn.addEventListener('click', async () => {
+        admitBtn.disabled = true; denyBtn.disabled = true;
+        // Snapshot so we can revert on server failure. Optimistic drop
+        // makes the strip clear immediately; if the request fails, we
+        // restore so the host can try again.
+        const savedPending = (line && line.pending) ? line.pending.slice() : [];
         if (line && Array.isArray(line.pending)) {
           line.pending = line.pending.filter(p => p.id !== entry.id);
         }
         renderAdmit();
-        // Pass mePid so the server's new auth path (participantId ===
-        // createdBy) works for hosts who got the role via transfer
-        // and don't have a hostToken.
+        // mePid lets the server authorize via participantId === createdBy
+        // (the new auth path) when the caller has no hostToken (post-transfer host).
         const r = await cqCloud.admit(lineCode, entry.id, hostToken, mePid);
-        if (r && r.line) { line = r.line; reconcileTiles(); renderAdmit(); }
+        if (r && r.ok && r.line) {
+          line = r.line;
+          reconcileTiles();
+          renderAdmit();
+        } else {
+          // Restore the pending so the host can retry.
+          if (line) line.pending = savedPending;
+          renderAdmit();
+          const reason = (r && r.reason) || 'unknown';
+          banner(`Admit failed (${reason}) — tap Admit again`, 'warn');
+          // Re-enable buttons via the next renderAdmit.
+        }
       });
-      admitSlot.querySelector('[data-role="deny"]').addEventListener('click', async () => {
+      denyBtn.addEventListener('click', async () => {
+        admitBtn.disabled = true; denyBtn.disabled = true;
+        const savedPending = (line && line.pending) ? line.pending.slice() : [];
         if (line && Array.isArray(line.pending)) {
           line.pending = line.pending.filter(p => p.id !== entry.id);
         }
         renderAdmit();
-        await cqCloud.deny(lineCode, entry.id, hostToken, mePid);
+        const r = await cqCloud.deny(lineCode, entry.id, hostToken, mePid);
+        if (!r || !r.ok) {
+          if (line) line.pending = savedPending;
+          renderAdmit();
+          banner('Deny failed — try again', 'warn');
+        }
       });
     };
 
