@@ -548,7 +548,21 @@
         banner(`${headlineName} is asking to join${extra} — admit below`, 'warn');
         flashTitle(`(${pending.length}) waiting to join`);
       }
-      if (!pending.length) { admitSlot.innerHTML = ''; return; }
+      if (!pending.length) {
+        // Render a passive "channel is live, no requests yet" strip so
+        // the host can VISUALLY confirm their device is listening. If
+        // a guest reports "I sent a request but it never arrived",
+        // seeing this strip means the channel is fine — the issue is
+        // upstream (different line code, server down, etc).
+        admitSlot.innerHTML = `
+          <div class="admit-strip" style="background:rgba(255,255,255,0.025); border-color:rgba(255,255,255,0.08); animation:none;">
+            <div class="info" style="text-align:center;">
+              <div class="sub" style="color:var(--fg-dim);">LISTENING FOR JOIN REQUESTS · NONE YET</div>
+            </div>
+          </div>
+        `;
+        return;
+      }
       const entry = pending[0];
       const safe = escapeHtml(entry.name || 'Guest');
       const isFresh = fresh.length > 0;
@@ -640,6 +654,38 @@
       }).catch(() => {});
     }, 2000);
 
+    // Backup admit poller — startSync only fires onUpdate when the
+    // JSON snapshot changes, which is correct but could theoretically
+    // miss a change if two ticks land on identical-serialized states.
+    // This independent poll just refreshes our `line` and re-renders
+    // the admit strip every 2s. Cheap, defensive, and the diagnostic
+    // log here is what to look at when a guest's request "vanishes":
+    // if the count goes from 0 → 1 in this log, the channel works
+    // and the bug is elsewhere; if it never goes up, the request
+    // didn't reach this line on the server.
+    const admitPollTimer = setInterval(async () => {
+      try {
+        const r = await cqCloud.fetch(lineCode);
+        if (!r || !r.ok || !r.line) return;
+        const prevPending = Array.isArray(line && line.pending)
+          ? line.pending.filter(p => p.status === 'pending').length
+          : 0;
+        line = r.line;
+        const newPending = (r.line.pending || []).filter(p => p.status === 'pending').length;
+        if (newPending !== prevPending) {
+          try {
+            console.log('[room] admit-poll', {
+              lineCode, mePid,
+              isHost: r.line.createdBy === mePid,
+              pending: newPending, prev: prevPending,
+              participants: (r.line.participants || []).length,
+            });
+          } catch {}
+        }
+        renderAdmit();
+      } catch {}
+    }, 2000);
+
     // Away-sweeper: tile goes to AWAY after 6s of no ping. Guest tiles
     // get dropped after 60s of staleness (mirrors call.html behavior).
     setInterval(() => {
@@ -671,6 +717,7 @@
       if (cleanedUp) return; cleanedUp = true;
       try { stopSync && stopSync(); } catch {}
       try { clearInterval(pingTimer); } catch {}
+      try { clearInterval(admitPollTimer); } catch {}
       try { voiceRoom && voiceRoom.close(); } catch {}
       try { stopVad && stopVad(); } catch {}
       try { stopLiveness && stopLiveness(); } catch {}

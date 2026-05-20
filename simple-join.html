@@ -204,6 +204,7 @@
     let stopSync = null;
 
     async function submitRequest(name, photo) {
+      try { console.log('[join] submit →', { lineCode, name }); } catch {}
       const r = await cqCloud.addPending(lineCode, {
         // Lines opened via /api/simple/start don't expose openToken to
         // joiners (any code-holder can request to join). The server
@@ -213,12 +214,15 @@
         name,
         photo,
       });
+      try { console.log('[join] submit ←', { ok: r && r.ok, reason: r && r.reason, pendingId: r && r.pendingId, status: r && r.status }); } catch {}
       if (!r || !r.ok) {
         showCard('bad');
         document.getElementById('bad-lead').textContent =
           r && r.reason === 'invalid-token'
             ? 'This line is closed to new requests. Ask the host for a fresh link.'
-            : 'Could not submit the request. Try again in a moment.';
+            : r && r.reason === 'not-found'
+              ? 'This line has expired or the host ended it. Ask for a new link.'
+              : 'Could not submit the request. Try again in a moment.';
         return;
       }
       myPendingId = r.pendingId;

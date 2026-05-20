@@ -181,10 +181,14 @@ app.put('/api/line/:id', (req, res) => {
 //      request to join; the host gates on admit.
 app.post('/api/line/:id/pending', (req, res) => {
   const line = getLine(req.params.id);
-  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  if (!line) {
+    console.log('[srv] /pending 404 — line not found', req.params.id);
+    return res.status(404).json({ ok: false, reason: 'not-found' });
+  }
   const { openToken, name, photo } = req.body || {};
   if (line.joinPolicy !== 'open') {
     if (!line.openToken || line.openToken !== openToken) {
+      console.log('[srv] /pending 403 — invalid token', req.params.id, 'policy=', line.joinPolicy);
       return res.status(403).json({ ok: false, reason: 'invalid-token' });
     }
   }
@@ -198,6 +202,12 @@ app.post('/api/line/:id/pending', (req, res) => {
     requestedAt: Date.now(),
   });
   touch(req.params.id);
+  console.log('[srv] /pending added', {
+    lineId: req.params.id,
+    pendingId,
+    name: String(name || 'Guest').slice(0, 40),
+    pendingCount: line.pending.length,
+  });
   res.json({ ok: true, pendingId, line: sanitize(line) });
 });
 
