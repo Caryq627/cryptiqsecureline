@@ -181,7 +181,7 @@
           <div class="chip"><span data-icon="speakOff"></span>Anti voice-clone</div>
         </div>
 
-        <a href="setup.html" class="btn btn-primary btn-block btn-lg">
+        <a href="simple.html" class="btn btn-primary btn-block btn-lg">
           <span data-icon="phone"></span>
           Start a secure line
           <span data-icon="arrowRight"></span>
@@ -191,6 +191,8 @@
           Have a link? <a href="#" id="paste-link">Paste &amp; join →</a>
           &nbsp;·&nbsp;
           <a href="#" id="try-demo">Try a sample call →</a>
+          &nbsp;·&nbsp;
+          <a href="setup.html" style="color:var(--fg-dim);">Advanced (pre-enroll attendees) →</a>
         </p>
       </section>
     </main>
@@ -241,17 +243,28 @@
       e.preventDefault();
       let text = '';
       try { text = await navigator.clipboard.readText(); } catch {}
-      if (!text) text = prompt('Paste your secure line link') || '';
+      if (!text) text = prompt('Paste your secure line link or invite code') || '';
       text = text.trim();
       if (!text) return;
+      // Plain code, e.g. "A7K9PX"
+      if (/^[A-Za-z0-9]{4,16}$/.test(text)) {
+        location.href = `simple-join.html?c=${encodeURIComponent(text.toUpperCase())}`;
+        return;
+      }
       try {
         const u = new URL(text, location.href);
-        if (u.pathname.endsWith('join.html') || u.searchParams.get('line')) {
+        // New simple-flow link → simple-join.html?c=CODE
+        if (u.pathname.endsWith('simple-join.html') || u.searchParams.get('c')) {
+          location.href = u.toString();
+          return;
+        }
+        // Legacy links — keep working.
+        if (u.pathname.endsWith('join.html') || u.pathname.endsWith('guest.html') || u.searchParams.get('line')) {
           location.href = u.toString();
           return;
         }
       } catch {}
-      alert('That doesn’t look like a secure line link.');
+      alert('That doesn’t look like a secure line link or code.');
     });
 
     // "Try a sample call" → two-step:

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Start a Secure Line — Cryptiq</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/cryptiq.css" />
+</head>
+<body>
+  <div class="page">
+
+    <header class="top-rail">
+      <a class="brand" href="/">
+        <svg class="cq-logo cq-mark-top is-idle" viewBox="0 0 240 240" aria-hidden="true">
+          <circle class="cq-ring cq-ring-1" cx="120" cy="120" r="114" fill="none" stroke="#2ec4b6" stroke-opacity="0.85" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="110 40 78 30 120 32 60 34"/>
+          <circle class="cq-ring cq-ring-2" cx="120" cy="120" r="96"  fill="none" stroke="#2ec4b6" stroke-opacity="0.60" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="58 28 95 24 72 28 95 28"/>
+          <circle class="cq-ring cq-ring-3" cx="120" cy="120" r="80"  fill="none" stroke="#2ec4b6" stroke-opacity="0.38" stroke-width="1.1" stroke-linecap="round" stroke-dasharray="70 22 90 28 110 26 50 24"/>
+          <g class="cq-phones" transform="translate(120 120)">
+            <polyline class="cq-bracket cq-bracket-l" points="-16,-36 -50,0 -16,36" fill="none" stroke="#2ec4b6" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline class="cq-bracket cq-bracket-r" points="16,-36 50,0 16,36"   fill="none" stroke="#2ec4b6" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle class="cq-dot cq-dot-1" cx="-18" cy="0" r="6" fill="#2ec4b6"/>
+            <circle class="cq-dot cq-dot-2" cx="0"   cy="0" r="6" fill="#2ec4b6"/>
+            <circle class="cq-dot cq-dot-3" cx="18"  cy="0" r="6" fill="#2ec4b6"/>
+          </g>
+        </svg>
+        <span class="wordmark">
+          <span class="cq-wordmark-img" role="img" aria-label="Cryptiq"></span>
+          <span class="sml">SECURE LINE</span>
+        </span>
+      </a>
+      <div class="rail-meta">
+        <span class="dot"></span>
+        <span>NEW LINE</span>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
+      </div>
+    </header>
+
+    <main class="main-centered">
+      <section class="card slim">
+        <div class="card-eyebrow">
+          <span class="dot"></span>
+          SECURE LINE
+        </div>
+        <h1 style="font-size:28px;">
+          Start a <span class="accent">Secure Line</span>
+        </h1>
+        <p class="lead">
+          Verify your face, then share a short invite link. Anyone with the link scans their face and waits for you to let them in.
+        </p>
+
+        <div class="field">
+          <label for="host-name">Your name</label>
+          <input id="host-name" type="text" maxlength="48" placeholder="Jane Chen" autocomplete="name" autofocus />
+        </div>
+
+        <button class="btn btn-primary btn-block" id="start-btn" type="button" disabled>
+          <span data-icon="phone"></span>
+          Start the line
+        </button>
+
+        <p class="sub" style="margin-top:14px; text-align:center;">
+          <a href="index.html" style="color:var(--fg-dim); text-decoration:none;">← Back to home</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      Cryptiq Secure Line · Identity verified · Voice only
+    </footer>
+  </div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/secure-line.js"></script>
+  <script src="js/cq-cloud.js"></script>
+  <script>
+    window.CQ_FACETEC = {
+      server:    'https://54.211.82.159.sslip.io',
+      deviceKey: 'dNcawGQtDA4vGqAYgR2lUTmlmAivtfNT'
+    };
+  </script>
+  <script src="js/facetec-bridge.js"></script>
+  <script src="js/cq-enroll.js"></script>
+  <script src="js/cq-face-gate.js"></script>
+  <script src="js/cq-connecting.js"></script>
+  <script>
+    cqIconsHydrate();
+
+    const nameInput = document.getElementById('host-name');
+    const startBtn  = document.getElementById('start-btn');
+
+    nameInput.addEventListener('input', () => {
+      startBtn.disabled = !nameInput.value.trim();
+    });
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !startBtn.disabled) startBtn.click();
+    });
+
+    startBtn.addEventListener('click', () => {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      startBtn.disabled = true;
+
+      // Step 1: capture a clean reference photo. cqEnroll handles the
+      // camera UI, face-presence detection, and verifyEnrollmentPhoto.
+      cqEnroll.show({
+        headline: 'Capture your face',
+        sub:      'Take a photo or upload one. This is your reference for the line.',
+        cancelText: 'Cancel',
+        onCaptured: (photo) => livenessStep(name, photo),
+        onCancel:   () => { startBtn.disabled = false; },
+      });
+    });
+
+    function livenessStep(name, photo) {
+      // Step 2: prove the captured face is live + matches itself. Same
+      // pattern as the Try Demo flow on the home page — proven reliable.
+      const firstName = name.split(/\s+/)[0];
+      cqFaceGate.verify({
+        refPhoto:  photo,
+        headline:  `Verify it's you, ${firstName}`,
+        sub:       'Live face check before the line opens.',
+        cancelText: 'Cancel',
+        onVerified: () => createLine(name, photo),
+        onCancel:   () => { startBtn.disabled = false; },
+      });
+    }
+
+    async function createLine(name, photo) {
+      // Show the connecting animation while the server mints the line.
+      // The animation runs ~2.8s; createLine usually returns <1s. Race
+      // them — whichever finishes last triggers the navigation.
+      let lineRes = null;
+      let animDone = false;
+      const startedAt = Date.now();
+
+      cqConnecting.show({
+        tag:      'Securing the line…',
+        tagAfter: 'Line opened — entering…',
+        onDone: () => {
+          animDone = true;
+          if (lineRes) finalize(lineRes);
+        },
+      });
+
+      try {
+        lineRes = await cqCloud.simpleStart(name, photo);
+      } catch (e) {
+        lineRes = { ok: false, reason: 'network', error: String(e) };
+      }
+      if (animDone) finalize(lineRes);
+    }
+
+    function finalize(res) {
+      if (!res || !res.ok) {
+        // Bail out of the connecting overlay if the API failed.
+        const overlay = document.querySelector('.cq-connecting-overlay');
+        if (overlay) overlay.remove();
+        const msg = res && res.reason === 'no-name'
+          ? 'Name is required.'
+          : 'Could not open the line. Check your connection and try again.';
+        startBtn.disabled = false;
+        alert(msg);
+        return;
+      }
+      const { lineCode, participantId, hostToken } = res;
+      // Persist host token + this device's session so simple-room.html
+      // knows it's the host and can authorize admit/deny.
+      try { localStorage.setItem('cq.simple.host.' + lineCode, hostToken); } catch {}
+      try {
+        sessionStorage.setItem('cq.simple.session', JSON.stringify({
+          lineCode, participantId, hostToken,
+          role: 'host',
+          gatePassedAt: Date.now(),
+        }));
+      } catch {}
+      location.href = `simple-room.html?c=${encodeURIComponent(lineCode)}&me=${encodeURIComponent(participantId)}`;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Secure Line — Cryptiq</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/cryptiq.css" />
+  <style>
+    /* Simple-room-specific tweaks. Most styles live in css/cryptiq.css. */
+    .simple-share {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px;
+      background: var(--accent-soft);
+      border-top: 1px solid var(--accent-line);
+      border-bottom: 1px solid var(--accent-line);
+      animation: cq-fade-in 0.18s ease;
+    }
+    .simple-share .label {
+      font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 0.16em; color: var(--accent);
+    }
+    .simple-share .url {
+      flex: 1; min-width: 0;
+      font-family: var(--font-mono); font-size: 12px;
+      color: var(--fg);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      background: var(--bg-deep);
+      border: 1px solid var(--surface-border);
+      border-radius: 6px;
+      padding: 6px 10px;
+    }
+    .simple-share .code {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--accent);
+      font-size: 13px;
+      letter-spacing: 0.12em;
+    }
+  </style>
+</head>
+<body>
+  <div class="call-shell">
+
+    <header class="call-header">
+      <div class="line-id">
+        <svg class="cq-logo cq-mark-top is-idle" viewBox="0 0 240 240" aria-hidden="true">
+          <circle class="cq-ring cq-ring-1" cx="120" cy="120" r="114" fill="none" stroke="#2ec4b6" stroke-opacity="0.85" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="110 40 78 30 120 32 60 34"/>
+          <circle class="cq-ring cq-ring-2" cx="120" cy="120" r="96"  fill="none" stroke="#2ec4b6" stroke-opacity="0.60" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="58 28 95 24 72 28 95 28"/>
+          <circle class="cq-ring cq-ring-3" cx="120" cy="120" r="80"  fill="none" stroke="#2ec4b6" stroke-opacity="0.38" stroke-width="1.1" stroke-linecap="round" stroke-dasharray="70 22 90 28 110 26 50 24"/>
+          <g class="cq-phones" transform="translate(120 120)">
+            <polyline class="cq-bracket cq-bracket-l" points="-16,-36 -50,0 -16,36" fill="none" stroke="#2ec4b6" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline class="cq-bracket cq-bracket-r" points="16,-36 50,0 16,36"   fill="none" stroke="#2ec4b6" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle class="cq-dot cq-dot-1" cx="-18" cy="0" r="6" fill="#2ec4b6"/>
+            <circle class="cq-dot cq-dot-2" cx="0"   cy="0" r="6" fill="#2ec4b6"/>
+            <circle class="cq-dot cq-dot-3" cx="18"  cy="0" r="6" fill="#2ec4b6"/>
+          </g>
+        </svg>
+        <div class="line-id-text">
+          <span class="name" id="line-name">Secure Line</span>
+          <span class="sep" aria-hidden="true">·</span>
+          <span class="code" id="line-code">—</span>
+          <span class="sep" aria-hidden="true">·</span>
+          <span class="clock"><span class="live-dot" aria-hidden="true"></span><span id="line-clock">00:00</span></span>
+        </div>
+      </div>
+      <div class="rail-meta">
+        <span id="roster-count" title="Verified attendees">0/0</span>
+        <button class="btn-icon btn-icon-sm" id="share-btn" type="button" title="Share invite link" aria-label="Share invite">
+          <span data-icon="share"></span>
+        </button>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme"></button>
+      </div>
+    </header>
+
+    <div id="share-slot"></div>
+    <div id="admit-slot"></div>
+
+    <main class="tile-grid" id="tile-grid" aria-live="polite"></main>
+
+    <footer class="call-controls">
+      <button class="btn-icon" id="mic-btn" title="Mute / unmute (M)" aria-label="Mute">
+        <span data-icon="mic"></span>
+      </button>
+      <button class="btn-icon is-danger" id="leave-btn" title="Leave" aria-label="Leave">
+        <span data-icon="phoneOff"></span>
+      </button>
+    </footer>
+  </div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/secure-line.js"></script>
+  <script src="js/cq-cloud.js"></script>
+  <script src="js/cq-voice.js"></script>
+  <script>
+    window.CQ_FACETEC = {
+      server:    'https://54.211.82.159.sslip.io',
+      deviceKey: 'dNcawGQtDA4vGqAYgR2lUTmlmAivtfNT'
+    };
+  </script>
+  <script src="js/facetec-bridge.js"></script>
+  <script src="js/cq-disconnecting.js"></script>
+  <script>
+    cqIconsHydrate();
+
+    // ---------- session ----------
+    const params = new URLSearchParams(location.search);
+    const lineCode = (params.get('c') || '').trim().toUpperCase();
+    const mePid    = (params.get('me') || '').trim();
+
+    let session = null;
+    try { session = JSON.parse(sessionStorage.getItem('cq.simple.session') || 'null'); } catch {}
+    const hostToken = (() => {
+      try { return localStorage.getItem('cq.simple.host.' + lineCode); } catch { return null; }
+    })();
+
+    const escapeHtml = (s) => String(s || '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    })[c]);
+
+    const bail = (text) => {
+      document.body.innerHTML =
+        '<div style="padding:48px 20px; text-align:center; color:var(--fg-muted); max-width:420px; margin:0 auto;">' +
+        '<div style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.2em; color:var(--accent); margin-bottom:14px;">SECURE LINE</div>' +
+        '<div style="font-size:18px; font-weight:600; color:var(--fg); margin-bottom:8px;">' + escapeHtml(text) + '</div>' +
+        '<a class="btn btn-ghost" href="/">← Home</a>' +
+        '</div>';
+      throw new Error(text);
+    };
+
+    if (!lineCode || !mePid) bail('Missing line or participant id.');
+
+    // Gate-pass freshness — same guard as call.html so a pull-to-refresh
+    // doesn't let someone bypass the face check.
+    const GATE_FRESH_MS = 60 * 1000;
+    if (!session || session.lineCode !== lineCode || (Date.now() - (session.gatePassedAt || 0)) > GATE_FRESH_MS) {
+      bail('Identity verification expired. Use your invite link again.');
+    }
+
+    // ---------- line state (pulled from cloud) ----------
+    let line = null;
+    let me = null;
+    const isHost = () => !!(line && line.createdBy === mePid);
+
+    // ---------- tiles ----------
+    const grid = document.getElementById('tile-grid');
+    const lineNameEl = document.getElementById('line-name');
+    const lineCodeEl = document.getElementById('line-code');
+    const rosterEl   = document.getElementById('roster-count');
+    const tilesById = new Map();
+
+    lineCodeEl.textContent = lineCode;
+
+    const buildTile = (p) => {
+      const tile = document.createElement('div');
+      tile.className = 'tile state-away';
+      tile.dataset.pid = p.id;
+      tile.innerHTML = `
+        <div class="tile-scanline"></div>
+        <div class="speaker-flag" title="Speaking"><span data-icon="volume"></span></div>
+        <div class="mute-flag" title="Mic muted"><span data-icon="micOff"></span></div>
+        <div class="avatar"${p.photo ? ` style="background-image:url(${p.photo})"` : ''}></div>
+        <div class="name">${escapeHtml(p.name)}${p.id === mePid ? ' <span style="color:var(--accent); font-size:10px; font-family:var(--font-mono); letter-spacing:0.14em; margin-left:4px;">YOU</span>' : ''}</div>
+        <div class="role">${p.id === (line && line.createdBy) ? 'HOST' : 'GUEST'}</div>
+        <div class="status-pill"><span class="dot"></span><span class="label">AWAY</span></div>
+      `;
+      if (p.id === mePid) tile.classList.add('is-self');
+      grid.appendChild(tile);
+      cqIconsHydrate(tile);
+      tilesById.set(p.id, {
+        el: tile,
+        label: tile.querySelector('.status-pill .label'),
+        state: 'away',
+        muted: false,
+        speaking: false,
+        lastPing: 0,
+      });
+    };
+
+    const setTileState = (pid, state, meta) => {
+      const t = tilesById.get(pid);
+      if (!t) return;
+      t.state = state;
+      if (meta && 'muted'    in meta) t.muted    = !!meta.muted;
+      if (meta && 'speaking' in meta) t.speaking = !!meta.speaking;
+      t.lastPing = Date.now();
+      const el = t.el;
+      el.classList.remove('state-verified','state-speaking','state-away');
+      let cls = 'state-verified';
+      if (state === 'away') cls = 'state-away';
+      else if (t.speaking && !t.muted) cls = 'state-speaking';
+      el.classList.add(cls);
+      el.classList.toggle('is-muted', !!t.muted);
+      el.classList.toggle('is-speaking', t.speaking && state !== 'away' && !t.muted);
+      t.label.textContent =
+        state === 'away'                ? 'AWAY' :
+        (t.speaking && !t.muted)        ? 'SPEAKING' :
+        'VERIFIED';
+      updateRoster();
+    };
+
+    const updateRoster = () => {
+      let v = 0;
+      tilesById.forEach(t => { if (t.state !== 'away') v++; });
+      rosterEl.textContent = `${v}/${tilesById.size} VERIFIED`;
+    };
+
+    const reconcileTiles = () => {
+      if (!line) return;
+      const wantIds = new Set();
+      for (const p of (line.participants || [])) {
+        wantIds.add(p.id);
+        if (!tilesById.has(p.id)) buildTile(p);
+      }
+      // Drop tiles for participants no longer on the line.
+      for (const [pid, t] of tilesById) {
+        if (!wantIds.has(pid)) {
+          try { t.el.remove(); } catch {}
+          tilesById.delete(pid);
+        }
+      }
+      updateRoster();
+    };
+
+    // ---------- clock ----------
+    const startedAt = Date.now();
+    setInterval(() => {
+      const s = Math.floor((Date.now() - startedAt) / 1000);
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      document.getElementById('line-clock').textContent = `${mm}:${ss}`;
+    }, 1000);
+
+    // ---------- microphone ----------
+    let selfStream = null;
+    let voiceRoom = null;
+    let stopVad = null;
+    const myLocal = { muted: false, speaking: false };
+    const micBtn  = document.getElementById('mic-btn');
+
+    const setMic = (muted) => {
+      myLocal.muted = !!muted;
+      if (selfStream) {
+        selfStream.getAudioTracks().forEach(t => { t.enabled = !muted; });
+      }
+      micBtn.classList.toggle('is-warn', muted);
+      micBtn.classList.toggle('is-active', !muted);
+      micBtn.firstElementChild.innerHTML = muted ? cqIcons.micOff : cqIcons.mic;
+      const t = tilesById.get(mePid);
+      if (t) setTileState(mePid, t.state === 'away' ? 'verified' : t.state, { muted });
+    };
+
+    const startMicAndMesh = async () => {
+      try {
+        selfStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      } catch (e) {
+        console.warn('[room] mic denied / unavailable', e);
+        return;
+      }
+      // VAD drives the speaking-glow.
+      if (stopVad) { try { stopVad(); } catch {} stopVad = null; }
+      stopVad = cqFacetec.startVoiceActivity(selfStream, (speaking) => {
+        myLocal.speaking = speaking && !myLocal.muted;
+        const t = tilesById.get(mePid);
+        if (t) setTileState(mePid, 'verified', { muted: myLocal.muted, speaking: myLocal.speaking });
+      });
+      // WebRTC mesh — direct peer audio between every live participant.
+      if (voiceRoom) { try { voiceRoom.close(); } catch {} voiceRoom = null; }
+      if (window.cqVoice) {
+        const peerPids = () => {
+          if (!line) return [];
+          const live = line.live || {};
+          const now = Date.now();
+          const out = [];
+          for (const p of (line.participants || [])) {
+            if (p.id === mePid) continue;
+            const v = live[p.id];
+            if (!v) continue;
+            const ts = typeof v === 'object' ? v.ts : v;
+            if (now - ts < 12000) out.push(p.id);
+          }
+          return out;
+        };
+        voiceRoom = cqVoice.createRoom({ lineId: lineCode, mePid, localStream: selfStream, peerPids });
+      }
+    };
+
+    micBtn.addEventListener('click', () => setMic(!myLocal.muted));
+    document.addEventListener('keydown', (e) => {
+      if (e.target.matches('input, textarea')) return;
+      if (e.key === 'm' || e.key === 'M') micBtn.click();
+    });
+
+    // ---------- share button (host only) ----------
+    const shareSlot = document.getElementById('share-slot');
+    const shareBtn  = document.getElementById('share-btn');
+    const shareUrl  = `${location.origin}/simple-join.html?c=${encodeURIComponent(lineCode)}`;
+
+    let shareOpen = false;
+    const renderShare = () => {
+      if (!shareOpen) { shareSlot.innerHTML = ''; return; }
+      shareSlot.innerHTML = `
+        <div class="simple-share" role="region" aria-label="Invite link">
+          <span class="label">CODE</span>
+          <span class="code">${escapeHtml(lineCode)}</span>
+          <div class="url" title="${escapeHtml(shareUrl)}">${escapeHtml(shareUrl)}</div>
+          <button class="btn btn-primary btn-sm" data-role="copy" type="button">
+            <span data-icon="copy"></span> Copy
+          </button>
+          <button class="btn btn-ghost btn-sm" data-role="close" type="button" aria-label="Close">✕</button>
+        </div>
+      `;
+      cqIconsHydrate(shareSlot);
+      shareSlot.querySelector('[data-role="copy"]').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          banner('Link copied — share it with anyone you want in the call');
+        } catch {
+          // Fallback: select-and-copy
+          const ta = document.createElement('textarea');
+          ta.value = shareUrl;
+          ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); banner('Link copied'); } catch { banner('Couldn\'t copy — long-press to copy', 'warn'); }
+          ta.remove();
+        }
+      });
+      shareSlot.querySelector('[data-role="close"]').addEventListener('click', () => {
+        shareOpen = false; renderShare();
+      });
+    };
+    shareBtn.addEventListener('click', () => {
+      shareOpen = !shareOpen; renderShare();
+    });
+
+    // ---------- banner ----------
+    let bannerTimer = null;
+    const banner = (text, kind) => {
+      const old = document.querySelector('.banner');
+      if (old) old.remove();
+      const b = document.createElement('div');
+      b.className = 'banner' + (kind === 'warn' ? ' is-warn' : kind === 'danger' ? ' is-danger' : '');
+      b.innerHTML = `<span class="dot"></span>${escapeHtml(text)}`;
+      document.body.appendChild(b);
+      clearTimeout(bannerTimer);
+      bannerTimer = setTimeout(() => b.remove(), 3200);
+    };
+
+    // ---------- admit strip (host only) ----------
+    const admitSlot = document.getElementById('admit-slot');
+    const alertedPendingIds = new Set();
+
+    let audioCtx = null;
+    const playJoinChime = () => {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        for (const { f, t } of [{ f: 880, t: 0 }, { f: 1320, t: 0.13 }]) {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine'; osc.frequency.value = f;
+          gain.gain.setValueAtTime(0, now + t);
+          gain.gain.linearRampToValueAtTime(0.18, now + t + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + t + 0.30);
+          osc.connect(gain).connect(audioCtx.destination);
+          osc.start(now + t); osc.stop(now + t + 0.32);
+        }
+      } catch {}
+    };
+    const originalTitle = document.title;
+    let titleFlashTimer = null;
+    const flashTitle = (text) => {
+      clearInterval(titleFlashTimer);
+      let on = false;
+      titleFlashTimer = setInterval(() => {
+        on = !on;
+        document.title = on ? text : originalTitle;
+      }, 900);
+      const stop = () => {
+        clearInterval(titleFlashTimer); titleFlashTimer = null;
+        document.title = originalTitle;
+        document.removeEventListener('visibilitychange', onVis);
+      };
+      const onVis = () => { if (!document.hidden) stop(); };
+      document.addEventListener('visibilitychange', onVis);
+      setTimeout(stop, 20000);
+    };
+
+    const renderAdmit = () => {
+      if (!line || !isHost()) { admitSlot.innerHTML = ''; return; }
+      const pending = (line.pending || []).filter(p => p.status === 'pending');
+      const currentIds = new Set(pending.map(p => p.id));
+      const fresh = pending.filter(p => !alertedPendingIds.has(p.id));
+      for (const id of alertedPendingIds) if (!currentIds.has(id)) alertedPendingIds.delete(id);
+      if (fresh.length) {
+        for (const p of fresh) alertedPendingIds.add(p.id);
+        playJoinChime();
+        const headlineName = fresh[0].name || 'Someone';
+        const extra = fresh.length > 1 ? ` +${fresh.length - 1} more` : '';
+        banner(`${headlineName} is asking to join${extra} — admit below`, 'warn');
+        flashTitle(`(${pending.length}) waiting to join`);
+      }
+      if (!pending.length) { admitSlot.innerHTML = ''; return; }
+      const entry = pending[0];
+      const safe = escapeHtml(entry.name || 'Guest');
+      const isFresh = fresh.length > 0;
+      admitSlot.innerHTML = `
+        <div class="admit-strip${isFresh ? ' is-fresh' : ''}" role="region" aria-label="Guest admission">
+          <div class="avatar"${entry.photo ? ` style="background-image:url(${entry.photo})"` : ''}></div>
+          <div class="info">
+            <div class="name">${safe}</div>
+            <div class="sub">REQUESTING TO JOIN${pending.length > 1 ? ' · ' + (pending.length - 1) + ' MORE WAITING' : ''}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost btn-sm" data-role="deny" type="button">
+              <span data-icon="x"></span> Deny
+            </button>
+            <button class="btn btn-primary btn-sm" data-role="admit" type="button">
+              <span data-icon="check"></span> Admit
+            </button>
+          </div>
+        </div>
+      `;
+      cqIconsHydrate(admitSlot);
+      admitSlot.querySelector('[data-role="admit"]').addEventListener('click', async () => {
+        // Optimistically drop from local pending so the strip clears.
+        if (line && Array.isArray(line.pending)) {
+          line.pending = line.pending.filter(p => p.id !== entry.id);
+        }
+        renderAdmit();
+        const r = await cqCloud.admit(lineCode, entry.id, hostToken);
+        if (r && r.line) { line = r.line; reconcileTiles(); renderAdmit(); }
+      });
+      admitSlot.querySelector('[data-role="deny"]').addEventListener('click', async () => {
+        if (line && Array.isArray(line.pending)) {
+          line.pending = line.pending.filter(p => p.id !== entry.id);
+        }
+        renderAdmit();
+        await cqCloud.deny(lineCode, entry.id, hostToken);
+      });
+    };
+
+    // ---------- cloud sync + presence ----------
+    const applyRemoteLiveStates = () => {
+      if (!line || !line.live) return;
+      for (const [pid, v] of Object.entries(line.live)) {
+        if (pid === mePid) continue;
+        if (!v || typeof v !== 'object') continue;
+        const t = tilesById.get(pid);
+        if (!t) continue;
+        setTileState(pid, v.state || 'verified', { muted: !!v.muted, speaking: !!v.speaking });
+      }
+    };
+
+    const stopSync = cqCloud.startSync(lineCode, (remote) => {
+      line = remote;
+      reconcileTiles();
+      applyRemoteLiveStates();
+      renderAdmit();
+      if (!line.name) lineNameEl.textContent = 'Secure Line';
+      else lineNameEl.textContent = line.name;
+    }, { intervalMs: 2000 });
+
+    // Presence ping every 2s with our tile state.
+    const pingTimer = setInterval(() => {
+      cqCloud.ping(lineCode, mePid, {
+        state: 'verified',
+        muted: !!myLocal.muted,
+        speaking: !!myLocal.speaking,
+        handRaised: false,
+      }).catch(() => {});
+    }, 2000);
+
+    // Away-sweeper: tile goes to AWAY after 6s of no ping. Guest tiles
+    // get dropped after 60s of staleness (mirrors call.html behavior).
+    setInterval(() => {
+      const cutoff = Date.now() - 6000;
+      const guestCutoff = Date.now() - 60000;
+      const droppedGuests = [];
+      tilesById.forEach((t, pid) => {
+        if (pid === mePid) return;
+        if (t.lastPing && t.lastPing < cutoff && t.state !== 'away') {
+          setTileState(pid, 'away', { speaking: false });
+        }
+        if (t.lastPing && t.lastPing < guestCutoff && line) {
+          const p = (line.participants || []).find(x => x.id === pid);
+          if (p && p.role !== 'host') droppedGuests.push(pid);
+        }
+      });
+      if (droppedGuests.length) {
+        for (const pid of droppedGuests) {
+          const t = tilesById.get(pid);
+          if (t) { try { t.el.remove(); } catch {}; tilesById.delete(pid); }
+        }
+        updateRoster();
+      }
+    }, 2500);
+
+    // ---------- leave ----------
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) return; cleanedUp = true;
+      try { stopSync && stopSync(); } catch {}
+      try { clearInterval(pingTimer); } catch {}
+      try { voiceRoom && voiceRoom.close(); } catch {}
+      try { stopVad && stopVad(); } catch {}
+      try {
+        if (selfStream) selfStream.getTracks().forEach(t => t.stop());
+      } catch {}
+    };
+    window.addEventListener('pagehide', cleanup);
+
+    document.getElementById('leave-btn').addEventListener('click', () => {
+      cleanup();
+      try { sessionStorage.removeItem('cq.simple.session'); } catch {}
+      const home = '/?skipIntro=1';
+      if (window.cqDisconnecting && cqDisconnecting.show) {
+        let nav = false;
+        const go = () => { if (!nav) { nav = true; location.replace(home); } };
+        cqDisconnecting.show({ onDone: go });
+        setTimeout(go, 3500);
+      } else {
+        location.replace(home);
+      }
+    });
+
+    // ---------- boot ----------
+    (async () => {
+      // First fetch — seeds the line before mic + mesh start so peerPids
+      // sees real participants on the first reconcile.
+      const r = await cqCloud.fetch(lineCode);
+      if (!r || !r.ok || !r.line) {
+        bail('This Secure Line is not available. The host may have ended it.');
+        return;
+      }
+      line = r.line;
+      // Sanity: me must be on the participants list.
+      me = (line.participants || []).find(p => p.id === mePid);
+      if (!me) bail('You are not on this line. Use your invite link again.');
+      lineNameEl.textContent = line.name || 'Secure Line';
+      reconcileTiles();
+      // Show OURSELVES as verified immediately so the host doesn't see
+      // their own tile as AWAY for 2s while the first ping round-trips.
+      setTileState(mePid, 'verified', { muted: false, speaking: false });
+      renderAdmit();
+      await startMicAndMesh();
+      // Auto-open the share strip on the host's first load so the
+      // very first thing they see is the invite link to share.
+      if (isHost()) { shareOpen = true; renderShare(); }
+    })();
+  </script>
+</body>
+</html>

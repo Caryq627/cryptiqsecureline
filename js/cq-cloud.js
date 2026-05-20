@@ -79,16 +79,26 @@
       body: { openToken, name, photo },
     });
 
-  const admit = (lineId, pendingId) =>
+  // hostToken is required for lines created by /api/simple/start; the
+  // legacy setup-wizard flow doesn't use one. Passing undefined is safe.
+  const admit = (lineId, pendingId, hostToken) =>
     req(`/api/line/${encodeURIComponent(lineId)}/admit`, {
       method: 'POST',
-      body: { pendingId },
+      body: { pendingId, hostToken },
     });
 
-  const deny = (lineId, pendingId) =>
+  const deny = (lineId, pendingId, hostToken) =>
     req(`/api/line/${encodeURIComponent(lineId)}/deny`, {
       method: 'POST',
-      body: { pendingId },
+      body: { pendingId, hostToken },
+    });
+
+  // Simple-flow: host POSTs name + photo once, gets a short shareable
+  // code, their participantId, and a hostToken to authorize admit/deny.
+  const simpleStart = (name, photo) =>
+    req('/api/simple/start', {
+      method: 'POST',
+      body: { name, photo },
     });
 
   const consumeOneTime = (lineId, token) =>
@@ -205,6 +215,7 @@
     deny,
     consumeOneTime,
     clearSession,
+    simpleStart,
     ping,
     signal,
     pullSignals,

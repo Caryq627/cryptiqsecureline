@@ -100,6 +100,53 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, lines: lines.size, uptime: process.uptime() });
 });
 
+// Simple-flow line creator. The host's device POSTs once with their
+// name + photo and gets back a short 6-char shareable code, their
+// participantId, and a hostToken that authorizes admit/deny later.
+// All subsequent state-changing calls (pending / admit / deny / ping
+// / signal) go through the regular /api/line/:id endpoints with the
+// short code as the id.
+app.post('/api/simple/start', (req, res) => {
+  const { name, photo } = req.body || {};
+  const cleanName = String(name || '').trim().slice(0, 80);
+  if (!cleanName) return res.status(400).json({ ok: false, reason: 'no-name' });
+
+  // 6 chars from 30-char alphabet = 729M combinations. Retry a few
+  // times in case of (vanishingly unlikely) collision.
+  let code = null;
+  for (let i = 0; i < 25; i++) {
+    const c = randId(6);
+    if (!lines.has(c)) { code = c; break; }
+  }
+  if (!code) return res.status(503).json({ ok: false, reason: 'code-collision' });
+
+  const participantId = randId(10);
+  const hostToken = randId(20);
+  const line = {
+    id: code,
+    name: cleanName + "'s Secure Line",
+    createdAt: Date.now(),
+    createdBy: participantId,
+    hostToken,
+    // joinPolicy: 'open' tells /api/line/:id/pending that anyone with
+    // the line code can request to join — no openToken needed in the
+    // URL. The host still gates by clicking Admit / Deny.
+    joinPolicy: 'open',
+    participants: [{
+      id: participantId,
+      name: cleanName,
+      photo: photo || null,
+      role: 'host',
+      enrolledAt: Date.now(),
+    }],
+    pending: [],
+    live: {},
+    oneTimeTokens: {},
+  };
+  setLine(code, line);
+  res.json({ ok: true, lineCode: code, participantId, hostToken });
+});
+
 // Fetch the latest line state.
 app.get('/api/line/:id', (req, res) => {
   const line = getLine(req.params.id);
@@ -124,12 +171,21 @@ app.put('/api/line/:id', (req, res) => {
 });
 
 // Guest submits a join request (open-link flow).
+//
+// Two acceptance modes:
+//   1. Legacy lines minted an `openToken` that must match (the host
+//      shared a URL with that token in the hash).
+//   2. Simple-flow lines (created via /api/simple/start) set
+//      joinPolicy: 'open' — anyone with the short line code can
+//      request to join; the host gates on admit.
 app.post('/api/line/:id/pending', (req, res) => {
   const line = getLine(req.params.id);
   if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
   const { openToken, name, photo } = req.body || {};
-  if (!line.openToken || line.openToken !== openToken) {
-    return res.status(403).json({ ok: false, reason: 'invalid-token' });
+  if (line.joinPolicy !== 'open') {
+    if (!line.openToken || line.openToken !== openToken) {
+      return res.status(403).json({ ok: false, reason: 'invalid-token' });
+    }
   }
   if (!Array.isArray(line.pending)) line.pending = [];
   const pendingId = randId();
@@ -146,12 +202,19 @@ app.post('/api/line/:id/pending', (req, res) => {
 
 // Host admits a pending guest. Materializes them as a participant so
 // every device that polls picks them up.
+//
+// If the line was created via /api/simple/start it has a hostToken; the
+// caller must send it back to authorize admit. Lines from the legacy
+// setup-wizard flow have no hostToken and are open (backward compat).
 app.post('/api/line/:id/admit', (req, res) => {
   const line = getLine(req.params.id);
   if (!line || !Array.isArray(line.pending)) {
     return res.status(404).json({ ok: false, reason: 'not-found' });
   }
-  const { pendingId } = req.body || {};
+  const { pendingId, hostToken } = req.body || {};
+  if (line.hostToken && line.hostToken !== hostToken) {
+    return res.status(403).json({ ok: false, reason: 'not-host' });
+  }
   const entry = line.pending.find(p => p.id === pendingId);
   if (!entry) return res.status(404).json({ ok: false, reason: 'pending-not-found' });
   entry.status = 'admitted';
@@ -175,7 +238,10 @@ app.post('/api/line/:id/deny', (req, res) => {
   if (!line || !Array.isArray(line.pending)) {
     return res.status(404).json({ ok: false, reason: 'not-found' });
   }
-  const { pendingId } = req.body || {};
+  const { pendingId, hostToken } = req.body || {};
+  if (line.hostToken && line.hostToken !== hostToken) {
+    return res.status(403).json({ ok: false, reason: 'not-host' });
+  }
   const entry = line.pending.find(p => p.id === pendingId);
   if (!entry) return res.status(404).json({ ok: false, reason: 'pending-not-found' });
   entry.status = 'denied';
