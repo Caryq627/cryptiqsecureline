@@ -80,11 +80,17 @@
           audio.dataset.peer = peerPid;
           audioContainer.appendChild(audio);
           audioEls.set(peerPid, audio);
-          if (typeof onPeerAudio === 'function') {
-            try { onPeerAudio(peerPid, audio); } catch {}
-          }
         }
+        // Set srcObject BEFORE notifying the listener so an analyser
+        // attached in onPeerAudio actually has a live stream to read.
+        // (Previously the callback fired with srcObject still null and
+        // any AudioContext analyser came up empty.) Always fire the
+        // callback — on reconnects we want the listener to drop its
+        // old analyser and attach a fresh one to the new stream.
         audio.srcObject = stream;
+        if (typeof onPeerAudio === 'function') {
+          try { onPeerAudio(peerPid, audio, stream); } catch {}
+        }
         // Some browsers (mobile Safari) require an explicit play after
         // srcObject is set when autoplay had previously been blocked.
         const playP = audio.play();

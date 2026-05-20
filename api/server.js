@@ -171,6 +171,38 @@ app.put('/api/line/:id', (req, res) => {
   res.json({ ok: true, line: sanitize(merged) });
 });
 
+// Current host hands the host role to another participant. After this,
+// the old host can leave without ending the call, and the new host gets
+// admit/deny + transfer + end-call powers. Auth: caller must currently
+// be the host (createdBy or hostToken match). Rotates hostToken so
+// stale tokens are invalidated.
+app.post('/api/line/:id/transfer-host', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  const { fromPid, toPid, hostToken } = req.body || {};
+  if (!isHostCaller(line, { hostToken, callerParticipantId: fromPid })) {
+    return res.status(403).json({ ok: false, reason: 'not-host' });
+  }
+  if (!toPid || !Array.isArray(line.participants) || !line.participants.find(p => p.id === toPid)) {
+    return res.status(404).json({ ok: false, reason: 'target-not-on-line' });
+  }
+  line.createdBy = toPid;
+  // Rotate the legacy hostToken so the old value can't be replayed.
+  line.hostToken = randId(20);
+  // Reflect role on participants so UIs that read p.role see HOST/GUEST
+  // change. Old host becomes 'guest' (still on the line), new host
+  // becomes 'host'.
+  if (Array.isArray(line.participants)) {
+    for (const p of line.participants) {
+      if (p.id === toPid) p.role = 'host';
+      else if (p.id === fromPid) p.role = 'guest';
+    }
+  }
+  touch(req.params.id);
+  console.log('[srv] /transfer-host', { lineId: req.params.id, fromPid, toPid });
+  res.json({ ok: true, line: sanitize(line) });
+});
+
 // Guest submits a join request (open-link flow).
 //
 // Two acceptance modes:
@@ -211,21 +243,32 @@ app.post('/api/line/:id/pending', (req, res) => {
   res.json({ ok: true, pendingId, line: sanitize(line) });
 });
 
+// Authoritative host check. Accepts either:
+//   - Legacy hostToken match (setup.html / call.html flow).
+//   - callerParticipantId === line.createdBy (simple flow, where the
+//     act of being on the line as createdBy IS the auth — anyone with
+//     the host's participantId can act as host). This is what makes
+//     /transfer-host work cleanly: rotate createdBy, no secret to
+//     hand off.
+// Returns true when authorized, false when not.
+const isHostCaller = (line, body) => {
+  if (!line || !body) return false;
+  if (line.hostToken && body.hostToken === line.hostToken) return true;
+  if (body.callerParticipantId && body.callerParticipantId === line.createdBy) return true;
+  return false;
+};
+
 // Host admits a pending guest. Materializes them as a participant so
 // every device that polls picks them up.
-//
-// If the line was created via /api/simple/start it has a hostToken; the
-// caller must send it back to authorize admit. Lines from the legacy
-// setup-wizard flow have no hostToken and are open (backward compat).
 app.post('/api/line/:id/admit', (req, res) => {
   const line = getLine(req.params.id);
   if (!line || !Array.isArray(line.pending)) {
     return res.status(404).json({ ok: false, reason: 'not-found' });
   }
-  const { pendingId, hostToken } = req.body || {};
-  if (line.hostToken && line.hostToken !== hostToken) {
+  if (line.hostToken && !isHostCaller(line, req.body || {})) {
     return res.status(403).json({ ok: false, reason: 'not-host' });
   }
+  const { pendingId } = req.body || {};
   const entry = line.pending.find(p => p.id === pendingId);
   if (!entry) return res.status(404).json({ ok: false, reason: 'pending-not-found' });
   entry.status = 'admitted';
@@ -249,10 +292,10 @@ app.post('/api/line/:id/deny', (req, res) => {
   if (!line || !Array.isArray(line.pending)) {
     return res.status(404).json({ ok: false, reason: 'not-found' });
   }
-  const { pendingId, hostToken } = req.body || {};
-  if (line.hostToken && line.hostToken !== hostToken) {
+  if (line.hostToken && !isHostCaller(line, req.body || {})) {
     return res.status(403).json({ ok: false, reason: 'not-host' });
   }
+  const { pendingId } = req.body || {};
   const entry = line.pending.find(p => p.id === pendingId);
   if (!entry) return res.status(404).json({ ok: false, reason: 'pending-not-found' });
   entry.status = 'denied';
@@ -318,23 +361,54 @@ app.post('/api/line/:id/ping', (req, res) => {
 // Participant explicitly leaves the call. Broadcasts the departure
 // immediately so other devices' next poll sees them gone, instead of
 // waiting for the 12s presence TTL or the 60s guest-tile sweeper.
-// Removes from `live` always, and from `participants` if they joined
-// as a guest (host's enrolled roster persists across sessions). Safe
-// to call from sendBeacon — no response is required.
+//
+// Special case: if the leaver is the host (createdBy), the call ENDS
+// for everyone. We mark line.endedAt + endedReason so other clients
+// see it on their next poll and bail to the home screen. The line
+// (and its signal inbox) gets deleted after a 30s grace so the
+// "Call ended" UI has time to render before the dyno reaps the data.
+//
+// Safe to call from sendBeacon — no response body is required.
 app.post('/api/line/:id/leave', (req, res) => {
   const line = getLine(req.params.id);
   if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
   const { participantId } = req.body || {};
   if (!participantId) return res.status(400).json({ ok: false, reason: 'no-pid' });
-  if (line.live && line.live[participantId]) delete line.live[participantId];
-  if (Array.isArray(line.participants)) {
-    const p = line.participants.find(x => x.id === participantId);
-    if (p && p.role === 'guest') {
-      line.participants = line.participants.filter(x => x.id !== participantId);
+
+  const isHostLeaving = line.createdBy === participantId;
+
+  if (isHostLeaving) {
+    line.endedAt = Date.now();
+    line.endedReason = 'host-left';
+    // Drop pending + live so no one looks active in the death rattle.
+    line.pending = [];
+    line.live = {};
+    touch(req.params.id);
+    console.log('[srv] /leave host-ended', { lineId: req.params.id, participantId });
+    // Grace period before reaping the line entirely. 30s gives every
+    // device's 1.5-2s poll loop ample time to see endedAt and bail.
+    const reapId = req.params.id;
+    const reapAt = line.endedAt;
+    setTimeout(() => {
+      const entry = lines.get(reapId);
+      if (entry && entry.line && entry.line.endedAt === reapAt) {
+        lines.delete(reapId);
+        signalInboxes.delete(reapId);
+        console.log('[srv] /leave reaped ended line', reapId);
+      }
+    }, 30000);
+  } else {
+    if (line.live && line.live[participantId]) delete line.live[participantId];
+    if (Array.isArray(line.participants)) {
+      const p = line.participants.find(x => x.id === participantId);
+      if (p && p.role === 'guest') {
+        line.participants = line.participants.filter(x => x.id !== participantId);
+      }
     }
+    touch(req.params.id);
+    console.log('[srv] /leave', { lineId: req.params.id, participantId });
   }
-  touch(req.params.id);
-  console.log('[srv] /leave', { lineId: req.params.id, participantId });
+
   res.json({ ok: true, line: sanitize(line) });
 });
 

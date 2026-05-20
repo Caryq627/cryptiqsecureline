@@ -67,6 +67,56 @@
       }
       .self-preview.is-top .label { font-size: 6px; bottom: 6px; }
     }
+
+    /* Host-only kebab menu on each non-host tile. Stays hidden until
+       refreshTileMenus() decides the current viewer is the host. */
+    .tile-menu-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.5);
+      color: var(--fg);
+      border: 1px solid rgba(255,255,255,0.18);
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 6;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0;
+      transition: background 0.15s ease, transform 0.12s ease;
+    }
+    .tile-menu-btn:hover { background: rgba(0,0,0,0.78); transform: scale(1.05); }
+    .tile.has-menu .tile-menu-btn { display: inline-flex; }
+    .tile-menu-pop {
+      position: absolute;
+      top: 46px; right: 10px;
+      background: var(--bg-soft, #1a1f2b);
+      border: 1px solid var(--surface-border, rgba(255,255,255,0.12));
+      border-radius: 10px;
+      padding: 6px;
+      min-width: 168px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+      z-index: 12;
+      animation: cq-fade-in 0.14s ease;
+    }
+    .tile-menu-pop button {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      background: transparent;
+      border: 0;
+      color: var(--fg);
+      font-size: 13px;
+      cursor: pointer;
+      border-radius: 6px;
+      text-align: left;
+    }
+    .tile-menu-pop button:hover { background: rgba(46,196,182,0.16); }
+    .tile-menu-pop button svg { width: 14px; height: 14px; }
   </style>
 </head>
 <body>
@@ -204,11 +254,12 @@
       tile.dataset.pid = p.id;
       tile.innerHTML = `
         <div class="tile-scanline"></div>
+        <button class="tile-menu-btn" data-role="tile-menu" type="button" aria-label="Tile options" title="Options">⋮</button>
         <div class="speaker-flag" title="Speaking"><span data-icon="volume"></span></div>
         <div class="mute-flag" title="Mic muted"><span data-icon="micOff"></span></div>
         <div class="avatar"${p.photo ? ` style="background-image:url(${p.photo})"` : ''}></div>
         <div class="name">${escapeHtml(p.name)}${p.id === mePid ? ' <span style="color:var(--accent); font-size:10px; font-family:var(--font-mono); letter-spacing:0.14em; margin-left:4px;">YOU</span>' : ''}</div>
-        <div class="role">${p.id === (line && line.createdBy) ? 'HOST' : 'GUEST'}</div>
+        <div class="role" data-role-label>${p.id === (line && line.createdBy) ? 'HOST' : 'GUEST'}</div>
         <div class="status-pill"><span class="dot"></span><span class="label">VERIFIED</span></div>
       `;
       if (p.id === mePid) tile.classList.add('is-self');
@@ -271,7 +322,121 @@
           if (typeof detachPeerAudio === 'function') detachPeerAudio(pid);
         }
       }
+      refreshTileMenus();
+      refreshLeaveButton();
       updateRoster();
+    };
+
+    // Show / hide the kebab menu on each tile based on the CURRENT
+    // host's identity. Also keep the role label (HOST / GUEST) in sync
+    // — it can change mid-call when /transfer-host runs.
+    const refreshTileMenus = () => {
+      const amHost = isHost();
+      const currentHostId = line && line.createdBy;
+      tilesById.forEach((t, pid) => {
+        const isThisHost = pid === currentHostId;
+        // The kebab menu only makes sense on tiles OTHER than myself
+        // AND other than the host, AND only when I'm the host.
+        const showMenu = amHost && pid !== mePid && !isThisHost;
+        t.el.classList.toggle('has-menu', showMenu);
+        // Keep the HOST/GUEST label fresh.
+        const roleEl = t.el.querySelector('[data-role-label]');
+        if (roleEl) {
+          const wanted = isThisHost ? 'HOST' : 'GUEST';
+          if (roleEl.textContent !== wanted) roleEl.textContent = wanted;
+        }
+        // Close any open popover that's no longer relevant.
+        if (!showMenu) {
+          const pop = t.el.querySelector('.tile-menu-pop');
+          if (pop) pop.remove();
+        }
+      });
+    };
+
+    // The Leave button's semantics depend on whether you're host.
+    // When host, leaving ENDS the call for everyone — different copy.
+    const refreshLeaveButton = () => {
+      const btn = document.getElementById('leave-btn');
+      if (!btn) return;
+      if (isHost()) {
+        btn.title = 'End call for everyone';
+        btn.setAttribute('aria-label', 'End call');
+      } else {
+        btn.title = 'Leave';
+        btn.setAttribute('aria-label', 'Leave');
+      }
+    };
+
+    // Delegated click handler for the per-tile kebab menus.
+    document.getElementById('tile-grid').addEventListener('click', (e) => {
+      const menuBtn = e.target.closest('[data-role="tile-menu"]');
+      if (menuBtn) {
+        e.stopPropagation();
+        const tileEl = menuBtn.closest('.tile');
+        const pid = tileEl && tileEl.dataset.pid;
+        if (pid) openTileMenu(tileEl, pid);
+        return;
+      }
+      // Click elsewhere in the grid closes any open popover.
+      document.querySelectorAll('.tile-menu-pop').forEach(p => p.remove());
+    });
+    document.addEventListener('click', (e) => {
+      // Close popovers on outside clicks too.
+      if (!e.target.closest('.tile-menu-pop') && !e.target.closest('[data-role="tile-menu"]')) {
+        document.querySelectorAll('.tile-menu-pop').forEach(p => p.remove());
+      }
+    });
+
+    const openTileMenu = (tileEl, pid) => {
+      // Close any other open menu.
+      document.querySelectorAll('.tile-menu-pop').forEach(p => p.remove());
+      const pop = document.createElement('div');
+      pop.className = 'tile-menu-pop';
+      pop.innerHTML = `
+        <button data-action="make-host" type="button">
+          <span data-icon="userCheck"></span> Make host
+        </button>
+      `;
+      tileEl.appendChild(pop);
+      cqIconsHydrate(pop);
+      pop.querySelector('[data-action="make-host"]').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        pop.remove();
+        const target = (line && line.participants || []).find(p => p.id === pid);
+        const name = target ? target.name : 'this person';
+        if (!confirm(`Make ${name} the host? You'll lose host controls.`)) return;
+        const r = await cqCloud.transferHost(lineCode, mePid, pid, hostToken);
+        if (r && r.ok && r.line) {
+          line = r.line;
+          reconcileTiles();
+          applyRemoteLiveStates();
+          renderAdmit();
+          banner(`Host transferred to ${name}. You're now a guest.`);
+        } else {
+          banner('Transfer failed: ' + (r && r.reason || 'unknown'), 'warn');
+        }
+      });
+    };
+
+    // Detect that the host has ended the call. Other devices see
+    // line.endedAt on their next poll and bail with a "Call ended"
+    // notice. The server reaps the line entirely ~30s later.
+    let endedBannerShown = false;
+    const handleLineEnded = (remote) => {
+      if (cleanedUp) return;
+      if (!remote || !remote.endedAt) return;
+      // If we're the host who just clicked Leave, we're already on
+      // our way home — no need to show a "host ended" banner to
+      // ourselves. (After transfer-host, we may not be createdBy
+      // anymore, but cleanedUp guards the redundant case.)
+      if (endedBannerShown) return;
+      endedBannerShown = true;
+      banner('Host ended the call', 'warn');
+      setTimeout(() => {
+        cleanup();
+        try { sessionStorage.removeItem('cq.simple.session'); } catch {}
+        location.replace('/?skipIntro=1');
+      }, 1500);
     };
 
     // ---------- clock ----------
@@ -391,7 +556,7 @@
     const peerAnalysers = new Map();
     const peerSpeakingFromAudio = new Map(); // pid → bool
 
-    const attachPeerAudio = (peerPid, audioEl) => {
+    const attachPeerAudio = (peerPid, audioEl, stream) => {
       const t = tilesById.get(peerPid);
       if (t && audioEl) {
         // Nest the <audio> inside the tile DOM. Browsers don't do
@@ -402,13 +567,23 @@
         audioEl.style.display = 'none';
         try { t.el.appendChild(audioEl); } catch {}
       }
-      // Replace any previous analyser for this peer (e.g. PC was
-      // recreated on a reconnect).
+      // Replace any previous analyser for this peer (PC was recreated
+      // on a reconnect, or the stream itself changed).
       const prev = peerAnalysers.get(peerPid);
       if (prev && prev.stop) { try { prev.stop(); } catch {} }
-      const stream = audioEl && audioEl.srcObject;
-      if (!stream || !stream.getAudioTracks || !stream.getAudioTracks().length) return;
-      const stop = cqFacetec.startVoiceActivity(stream, (speaking) => {
+      peerAnalysers.delete(peerPid);
+      peerSpeakingFromAudio.delete(peerPid);
+
+      // Use the explicit stream from cq-voice (the audioEl.srcObject
+      // form was unreliable because it was sometimes set AFTER this
+      // callback fired — fixed in cq-voice ontrack but kept as a
+      // fallback for safety).
+      const src = (stream && stream.getAudioTracks && stream.getAudioTracks().length)
+        ? stream
+        : (audioEl && audioEl.srcObject);
+      if (!src || !src.getAudioTracks || !src.getAudioTracks().length) return;
+
+      const stop = cqFacetec.startVoiceActivity(src, (speaking) => {
         const prevSpk = peerSpeakingFromAudio.get(peerPid);
         if (prevSpk === speaking) return;
         peerSpeakingFromAudio.set(peerPid, speaking);
@@ -661,7 +836,10 @@
           line.pending = line.pending.filter(p => p.id !== entry.id);
         }
         renderAdmit();
-        const r = await cqCloud.admit(lineCode, entry.id, hostToken);
+        // Pass mePid so the server's new auth path (participantId ===
+        // createdBy) works for hosts who got the role via transfer
+        // and don't have a hostToken.
+        const r = await cqCloud.admit(lineCode, entry.id, hostToken, mePid);
         if (r && r.line) { line = r.line; reconcileTiles(); renderAdmit(); }
       });
       admitSlot.querySelector('[data-role="deny"]').addEventListener('click', async () => {
@@ -669,7 +847,7 @@
           line.pending = line.pending.filter(p => p.id !== entry.id);
         }
         renderAdmit();
-        await cqCloud.deny(lineCode, entry.id, hostToken);
+        await cqCloud.deny(lineCode, entry.id, hostToken, mePid);
       });
     };
 
@@ -694,6 +872,9 @@
 
     const stopSync = cqCloud.startSync(lineCode, (remote) => {
       line = remote;
+      // Check for host-ended state BEFORE doing anything else — if the
+      // host left, we want to navigate home, not render a stale roster.
+      if (remote.endedAt) { handleLineEnded(remote); return; }
       // Diagnostic: surface admit-relevant state on every sync tick so
       // a "request was sent but I never saw it" report can be debugged
       // from DevTools without redeploying.
@@ -714,7 +895,7 @@
       renderAdmit();
       if (!line.name) lineNameEl.textContent = 'Secure Line';
       else lineNameEl.textContent = line.name;
-    }, { intervalMs: 2000 });
+    }, { intervalMs: 1500 });
 
     // Presence ping every 2s with our real tile state, including the
     // FaceTec-driven liveness verdict so other devices see us as
@@ -735,7 +916,7 @@
       }).catch(() => {});
     };
     sendPing();
-    const pingTimer = setInterval(sendPing, 2000);
+    const pingTimer = setInterval(sendPing, 1500);
 
     // Backup poller — independent of startSync. Runs every 2s and
     // refreshes everything (line, tile states, admit strip). This is
@@ -751,6 +932,8 @@
           ? line.pending.filter(p => p.status === 'pending').length
           : 0;
         line = r.line;
+        // Host ended the call? Bail before any rendering.
+        if (r.line.endedAt) { handleLineEnded(r.line); return; }
         const newPending = (r.line.pending || []).filter(p => p.status === 'pending').length;
         if (newPending !== prevPending) {
           try {
@@ -769,7 +952,7 @@
         applyRemoteLiveStates();
         renderAdmit();
       } catch {}
-    }, 2000);
+    }, 1500);
 
     // Away-sweeper: tile goes to AWAY when a participant hasn't been
     // seen in line.live for a while. Window widened from 6s → 15s so
@@ -830,6 +1013,15 @@
     window.addEventListener('pagehide', () => cleanup({ beacon: true }));
 
     document.getElementById('leave-btn').addEventListener('click', () => {
+      // If we're the host, leaving ENDS the call for everyone. Make
+      // sure that's deliberate — a stray tap on a phone shouldn't kick
+      // every participant.
+      if (isHost()) {
+        const hasOthers = (line && line.participants || []).some(p => p.id !== mePid);
+        if (hasOthers && !confirm('End the call for everyone? This will kick all participants. Use the kebab menu on a tile to transfer host instead.')) {
+          return;
+        }
+      }
       cleanup();
       try { sessionStorage.removeItem('cq.simple.session'); } catch {}
       const home = '/?skipIntro=1';

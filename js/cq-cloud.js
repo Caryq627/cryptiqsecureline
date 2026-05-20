@@ -88,18 +88,33 @@
       body: { openToken, name, photo },
     });
 
-  // hostToken is required for lines created by /api/simple/start; the
-  // legacy setup-wizard flow doesn't use one. Passing undefined is safe.
-  const admit = (lineId, pendingId, hostToken) =>
+  // Host auth happens server-side via EITHER:
+  //   - legacy hostToken match, or
+  //   - callerParticipantId === line.createdBy (simple flow). Both are
+  //     forwarded; the server accepts whichever proves you're the host.
+  //     This is what makes /transfer-host work — after rotating
+  //     createdBy, the new host's mePid suffices and no secret had to
+  //     be handed off.
+  const admit = (lineId, pendingId, hostToken, callerParticipantId) =>
     req(`/api/line/${encodeURIComponent(lineId)}/admit`, {
       method: 'POST',
-      body: { pendingId, hostToken },
+      body: { pendingId, hostToken, callerParticipantId },
     });
 
-  const deny = (lineId, pendingId, hostToken) =>
+  const deny = (lineId, pendingId, hostToken, callerParticipantId) =>
     req(`/api/line/${encodeURIComponent(lineId)}/deny`, {
       method: 'POST',
-      body: { pendingId, hostToken },
+      body: { pendingId, hostToken, callerParticipantId },
+    });
+
+  // Current host hands the host role to another participant. The
+  // server checks fromPid is currently createdBy, then updates
+  // createdBy = toPid. From the next poll onwards, the new host's
+  // device sees isHost() === true and unlocks admit/deny/transfer.
+  const transferHost = (lineId, fromPid, toPid, hostToken) =>
+    req(`/api/line/${encodeURIComponent(lineId)}/transfer-host`, {
+      method: 'POST',
+      body: { fromPid, toPid, hostToken },
     });
 
   // Simple-flow: host POSTs name + photo once, gets a short shareable
@@ -246,6 +261,7 @@
     consumeOneTime,
     clearSession,
     simpleStart,
+    transferHost,
     leave,
     ping,
     signal,
