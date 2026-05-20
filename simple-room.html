@@ -41,17 +41,19 @@
       letter-spacing: 0.12em;
     }
 
-    /* Top-centered LookAway-style mini viewfinder. Overrides the default
-       bottom-right position from .self-preview. Smaller (88px) so it
-       sits unobtrusively above the tile grid. */
+    /* Top-centered LookAway-style mini viewfinder. Flush with the very
+       top edge of the viewport, z-indexed above the call header — the
+       header's center column is empty so the circle won't occlude any
+       text. */
     .self-preview.is-top {
-      top: 64px;
+      top: 0;
       bottom: auto;
       right: auto;
       left: 50%;
       transform: translateX(-50%);
       width: 88px;
       height: 88px;
+      z-index: 100;
     }
     .self-preview.is-top .label {
       bottom: 10px;
@@ -60,11 +62,10 @@
     }
     @media (max-width: 640px) {
       .self-preview.is-top {
-        top: 56px;
-        width: 72px;
-        height: 72px;
+        width: 64px;
+        height: 64px;
       }
-      .self-preview.is-top .label { font-size: 6.5px; bottom: 8px; }
+      .self-preview.is-top .label { font-size: 6px; bottom: 6px; }
     }
   </style>
 </head>
@@ -95,6 +96,9 @@
       </div>
       <div class="rail-meta">
         <span id="roster-count" title="Verified attendees">0/0</span>
+        <button class="btn-icon btn-icon-sm" id="monitor-btn" type="button" title="Active monitoring (off)" aria-label="Toggle active monitoring">
+          <span data-icon="eyeOff"></span>
+        </button>
         <button class="btn-icon btn-icon-sm" id="share-btn" type="button" title="Share invite link" aria-label="Share invite">
           <span data-icon="share"></span>
         </button>
@@ -308,25 +312,17 @@
       if (t) setTileState(mePid, myLocal.liveness, { muted, speaking: myLocal.speaking });
     };
 
+    // Mic-only boot. Camera is OFF by default; the user opts into active
+    // monitoring via the eye button in the header. Keeps the camera-
+    // permission prompt out of the happy path for voice-only calls.
     const startMicAndMesh = async () => {
-      // Open camera + mic together. The camera feed powers the
-      // top-centered viewfinder + continuous FaceTec 2D liveness loop.
-      // The WebRTC mesh receives an AUDIO-ONLY derivative — we never
-      // ship video frames to peers (voice-only call).
       try {
-        selfStream = await cqFacetec.openCamera(selfVideo, { audio: true });
+        audioOnlyStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       } catch (e) {
-        console.warn('[room] camera/mic denied', e);
-        // Mic-only fallback: still join the voice mesh, skip monitoring.
-        try {
-          selfStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        } catch (e2) {
-          console.warn('[room] mic also denied', e2);
-          return;
-        }
+        console.warn('[room] mic denied', e);
+        return;
       }
-      // Audio-only stream for the mesh, so video never leaves this device.
-      audioOnlyStream = new MediaStream(selfStream.getAudioTracks());
+      selfStream = audioOnlyStream; // alias — used by setMic + cleanup
 
       // Voice-activity detection drives the speaking-glow on the tile.
       if (stopVad) { try { stopVad(); } catch {} stopVad = null; }
@@ -358,34 +354,83 @@
         };
         voiceRoom = cqVoice.createRoom({ lineId: lineCode, mePid, localStream: audioOnlyStream, peerPids });
       }
-
-      // Active monitoring — only when we actually have a video track to
-      // monitor. cqFacetec.startContinuousLiveness ticks every ~1.8s,
-      // round-trips each frame through the FaceTec /liveness-2d endpoint,
-      // and emits one of: 'verifying' | 'verified' | 'away' | 'intruder'.
-      if (selfStream.getVideoTracks && selfStream.getVideoTracks().length) {
-        selfPreview.style.display = '';
-        setSelfPreviewState('verifying');
-        const ref = (me && me.photo) || null;
-        if (stopLiveness) { try { stopLiveness(); } catch {} stopLiveness = null; }
-        stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
-          refPhoto: ref,
-          cb: (state /* , meta */) => {
-            const next = (state === 'verified' || state === 'away' || state === 'intruder')
-              ? state
-              : 'verifying';
-            myLocal.liveness = next;
-            setSelfPreviewState(next);
-            // Reflect on our own tile + propagate via the next ping.
-            const t = tilesById.get(mePid);
-            if (t) setTileState(mePid, next === 'verifying' ? 'verified' : next, {
-              muted: myLocal.muted,
-              speaking: myLocal.speaking && next === 'verified',
-            });
-          },
-        });
-      }
     };
+
+    // ---------- active monitoring toggle ----------
+    //
+    // OFF by default. When the user enables it, we prompt for camera,
+    // show the top-centered viewfinder, and start the FaceTec 2D
+    // liveness loop. Disabling it stops the loop, releases the video
+    // tracks, and resets the local tile to 'verified' (entry-gated).
+    let monitoringEnabled = false;
+    let videoStream = null;
+    const monitorBtn = document.getElementById('monitor-btn');
+
+    const renderMonitorBtn = () => {
+      monitorBtn.classList.toggle('is-active', monitoringEnabled);
+      monitorBtn.firstElementChild.innerHTML = monitoringEnabled ? cqIcons.eye : cqIcons.eyeOff;
+      monitorBtn.title = monitoringEnabled
+        ? 'Active monitoring (on) — your face is verified every ~2s'
+        : 'Active monitoring (off) — tap to enable';
+    };
+    renderMonitorBtn();
+
+    const stopMonitoring = () => {
+      if (stopLiveness) { try { stopLiveness(); } catch {} stopLiveness = null; }
+      if (videoStream) {
+        try { videoStream.getTracks().forEach(t => t.stop()); } catch {}
+        videoStream = null;
+      }
+      try { selfVideo.srcObject = null; } catch {}
+      selfPreview.style.display = 'none';
+      myLocal.liveness = 'verified';
+      const t = tilesById.get(mePid);
+      if (t) setTileState(mePid, 'verified', { muted: myLocal.muted, speaking: myLocal.speaking });
+      monitoringEnabled = false;
+      renderMonitorBtn();
+    };
+
+    const startMonitoring = async () => {
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch (e) {
+        console.warn('[room] camera denied', e);
+        banner('Camera blocked — monitoring stays off', 'warn');
+        return;
+      }
+      selfVideo.srcObject = videoStream;
+      selfPreview.style.display = '';
+      setSelfPreviewState('verifying');
+      const ref = (me && me.photo) || null;
+      if (stopLiveness) { try { stopLiveness(); } catch {} stopLiveness = null; }
+      stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
+        refPhoto: ref,
+        cb: (state /* , meta */) => {
+          const next = (state === 'verified' || state === 'away' || state === 'intruder')
+            ? state
+            : 'verifying';
+          myLocal.liveness = next;
+          setSelfPreviewState(next);
+          const t = tilesById.get(mePid);
+          if (t) setTileState(mePid, next === 'verifying' ? 'verified' : next, {
+            muted: myLocal.muted,
+            speaking: myLocal.speaking && next === 'verified',
+          });
+        },
+      });
+      monitoringEnabled = true;
+      renderMonitorBtn();
+    };
+
+    monitorBtn.addEventListener('click', async () => {
+      monitorBtn.disabled = true;
+      try {
+        if (monitoringEnabled) stopMonitoring();
+        else await startMonitoring();
+      } finally {
+        monitorBtn.disabled = false;
+      }
+    });
 
     micBtn.addEventListener('click', () => setMic(!myLocal.muted));
     document.addEventListener('keydown', (e) => {
@@ -616,6 +661,9 @@
       try { stopLiveness && stopLiveness(); } catch {}
       try {
         if (selfStream) selfStream.getTracks().forEach(t => t.stop());
+      } catch {}
+      try {
+        if (videoStream) videoStream.getTracks().forEach(t => t.stop());
       } catch {}
     };
     window.addEventListener('pagehide', cleanup);
