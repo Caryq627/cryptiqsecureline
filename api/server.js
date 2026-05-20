@@ -315,6 +315,29 @@ app.post('/api/line/:id/ping', (req, res) => {
   res.json({ ok: true });
 });
 
+// Participant explicitly leaves the call. Broadcasts the departure
+// immediately so other devices' next poll sees them gone, instead of
+// waiting for the 12s presence TTL or the 60s guest-tile sweeper.
+// Removes from `live` always, and from `participants` if they joined
+// as a guest (host's enrolled roster persists across sessions). Safe
+// to call from sendBeacon — no response is required.
+app.post('/api/line/:id/leave', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  const { participantId } = req.body || {};
+  if (!participantId) return res.status(400).json({ ok: false, reason: 'no-pid' });
+  if (line.live && line.live[participantId]) delete line.live[participantId];
+  if (Array.isArray(line.participants)) {
+    const p = line.participants.find(x => x.id === participantId);
+    if (p && p.role === 'guest') {
+      line.participants = line.participants.filter(x => x.id !== participantId);
+    }
+  }
+  touch(req.params.id);
+  console.log('[srv] /leave', { lineId: req.params.id, participantId });
+  res.json({ ok: true, line: sanitize(line) });
+});
+
 // Host wipes session-scoped state when starting a fresh call: pending
 // guest requests from previous sessions, stale live presence, and any
 // participants who joined as guests last time. The host's enrolled

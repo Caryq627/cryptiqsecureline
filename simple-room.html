@@ -195,7 +195,12 @@
 
     const buildTile = (p) => {
       const tile = document.createElement('div');
-      tile.className = 'tile state-away';
+      // New participants are presumed VERIFIED on arrival — they just
+      // passed the face gate and (if a guest) the host just admitted
+      // them. Tiles start as AWAY only after the 6s sweeper finds no
+      // recent ping from them. This eliminates the brief AWAY flash
+      // that used to appear before the first /ping landed.
+      tile.className = 'tile state-verified';
       tile.dataset.pid = p.id;
       tile.innerHTML = `
         <div class="tile-scanline"></div>
@@ -204,7 +209,7 @@
         <div class="avatar"${p.photo ? ` style="background-image:url(${p.photo})"` : ''}></div>
         <div class="name">${escapeHtml(p.name)}${p.id === mePid ? ' <span style="color:var(--accent); font-size:10px; font-family:var(--font-mono); letter-spacing:0.14em; margin-left:4px;">YOU</span>' : ''}</div>
         <div class="role">${p.id === (line && line.createdBy) ? 'HOST' : 'GUEST'}</div>
-        <div class="status-pill"><span class="dot"></span><span class="label">AWAY</span></div>
+        <div class="status-pill"><span class="dot"></span><span class="label">VERIFIED</span></div>
       `;
       if (p.id === mePid) tile.classList.add('is-self');
       grid.appendChild(tile);
@@ -212,10 +217,14 @@
       tilesById.set(p.id, {
         el: tile,
         label: tile.querySelector('.status-pill .label'),
-        state: 'away',
+        state: 'verified',
         muted: false,
         speaking: false,
-        lastPing: 0,
+        // Seed lastPing so the 6s away-sweeper gives them a grace
+        // window to start pinging before being marked AWAY. If they
+        // actually aren't live (e.g. a stale enrolled attendee), the
+        // sweeper will catch them within the cutoff.
+        lastPing: Date.now(),
       });
     };
 
@@ -640,8 +649,11 @@
 
     // Presence ping every 2s with our real tile state, including the
     // FaceTec-driven liveness verdict so other devices see us as
-    // verified / away / intruder in sync.
-    const pingTimer = setInterval(() => {
+    // verified / away / intruder in sync. We fire one IMMEDIATELY at
+    // boot so the host's next poll sees us as live within ~2s of
+    // landing — no AWAY flash on the host's view while setInterval
+    // waits a full cycle.
+    const sendPing = () => {
       const state =
         myLocal.liveness === 'intruder' ? 'intruder' :
         myLocal.liveness === 'away'     ? 'away'     :
@@ -652,7 +664,9 @@
         speaking: !!myLocal.speaking,
         handRaised: false,
       }).catch(() => {});
-    }, 2000);
+    };
+    sendPing();
+    const pingTimer = setInterval(sendPing, 2000);
 
     // Backup admit poller — startSync only fires onUpdate when the
     // JSON snapshot changes, which is correct but could theoretically
@@ -713,8 +727,12 @@
 
     // ---------- leave ----------
     let cleanedUp = false;
-    const cleanup = () => {
+    const cleanup = (opts = {}) => {
       if (cleanedUp) return; cleanedUp = true;
+      // Broadcast leave so peers see us gone within one poll cycle
+      // instead of after the 12s presence TTL. Beacon variant for
+      // pagehide (regular fetch can be aborted on unload).
+      try { cqCloud.leave(lineCode, mePid, { beacon: !!opts.beacon }); } catch {}
       try { stopSync && stopSync(); } catch {}
       try { clearInterval(pingTimer); } catch {}
       try { clearInterval(admitPollTimer); } catch {}
@@ -728,7 +746,7 @@
         if (videoStream) videoStream.getTracks().forEach(t => t.stop());
       } catch {}
     };
-    window.addEventListener('pagehide', cleanup);
+    window.addEventListener('pagehide', () => cleanup({ beacon: true }));
 
     document.getElementById('leave-btn').addEventListener('click', () => {
       cleanup();

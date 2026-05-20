@@ -128,6 +128,27 @@
   const pullSignals = (lineId, pid, since) =>
     req(`/api/line/${encodeURIComponent(lineId)}/signal/${encodeURIComponent(pid)}?since=${since || 0}`);
 
+  // Tell the server we're leaving — drops us from live presence right
+  // away (and from participants if we're a guest) so other devices
+  // see us gone on their next poll, not after the 12s presence TTL.
+  //
+  // On pagehide / beforeunload the regular fetch can be aborted by
+  // the browser. sendBeacon is designed exactly for this — it's
+  // fire-and-forget and survives navigation. We use it when a `beacon`
+  // option is passed, and fall back to a normal POST otherwise.
+  const leave = (lineId, participantId, opts = {}) => {
+    const path = `/api/line/${encodeURIComponent(lineId)}/leave`;
+    const body = { participantId };
+    if (opts.beacon && navigator.sendBeacon) {
+      try {
+        const blob = new Blob([JSON.stringify(body)], { type: 'application/json' });
+        const ok = navigator.sendBeacon(url(path), blob);
+        return Promise.resolve({ ok });
+      } catch {}
+    }
+    return req(path, { method: 'POST', body });
+  };
+
   // ping(lineId, participantId, state?) — heartbeat + tile state.
   // state is { state, muted, handRaised, speaking } so other devices
   // can render this participant's tile correctly. All fields optional;
@@ -216,6 +237,7 @@
     consumeOneTime,
     clearSession,
     simpleStart,
+    leave,
     ping,
     signal,
     pullSignals,
