@@ -765,17 +765,32 @@
       cap.save.disabled = true;
 
       const cropped = renderEditorToDataUrl(720);
-      const verdict = await cqFacetec.verifyEnrollmentPhoto(cropped);
+      // Wrap in a hard 14s timeout so a hung verify server can't freeze
+      // the editor on "CHECKING PHOTO…". User can adjust + revalidate.
+      let verdict;
+      try {
+        verdict = await Promise.race([
+          cqFacetec.verifyEnrollmentPhoto(cropped),
+          new Promise(r => setTimeout(() => r({ ok: false, reason: 'timeout' }), 14000)),
+        ]);
+      } catch (e) {
+        verdict = { ok: false, reason: 'network-error', error: String(e) };
+      }
       if (gen !== editorRevalidateGen) return; // a newer adjustment superseded us
-      if (!verdict.ok) {
+      if (!verdict || !verdict.ok) {
         const msg = ({
           'multiple-faces':   'TOO MANY FACES — REPOSITION',
+          'too-many-faces':   'TOO MANY FACES — REPOSITION',
           'no-face-detected': 'NO CLEAR FACE — DRAG / ZOOM TO CENTER',
           'eyes-obstructed':  'EYES NOT VISIBLE — REMOVE SUNGLASSES',
           'mouth-obstructed': 'MOUTH NOT VISIBLE — REMOVE MASK',
           'face-too-small':   'FACE TOO SMALL — DRAG / ZOOM CLOSER',
           'low-quality':      'PHOTO TOO LOW QUALITY — TRY A CLEARER ONE',
-        })[verdict.reason] || 'PHOTO REJECTED — TRY ANOTHER';
+          'network-error':    'NETWORK ERROR — ADJUST OR TRY AGAIN',
+          'server-error':     'VERIFY SERVER UNREACHABLE — TRY AGAIN',
+          'timeout':          'VERIFY TIMED OUT — ADJUST OR TRY AGAIN',
+        })[verdict && verdict.reason] || 'PHOTO REJECTED — TRY ANOTHER';
+        try { console.warn('[setup] upload verify failed', verdict); } catch {}
         cap.uploadStatus.textContent = msg;
         cap.uploadStatus.className = 'viewfinder-status is-denied';
         cap.uploadPreview.classList.remove('is-verifying');
@@ -835,19 +850,17 @@
       stopCameraMode();
     };
 
-    // Face-presence detection ONLY — light loop that just counts faces in
-    // frame to enable / disable the Capture button. The actual capture
-    // happens on user click (see cap.capture handler below). This mirrors
-    // the demo's cqEnroll flow, which is reliable. The old loop auto-
-    // fired 2D liveness on every tick — that's a verification check, not
-    // an enrollment check, and it failed for harmless reasons (slight
-    // movement, lighting, single-frame liveness ambiguity) that have
-    // nothing to do with whether the photo is a usable reference.
+    // Face-presence detection ONLY — light loop that toggles the Capture
+    // button + status copy. Actual capture happens on user click. Mirrors
+    // the demo's cqEnroll flow, including the `busy` flag that pauses the
+    // loop while a capture+verify is in flight, so the loop can't clobber
+    // the "CHECKING PHOTO…" state or re-fire concurrently.
     let capFaceReady = false;
+    let capBusy = false;
     const startAutoCheck = () => {
       let checking = false;
       capCheckTimer = setInterval(async () => {
-        if (checking || capFrame || capMode !== 'camera') return;
+        if (checking || capBusy || capFrame || capMode !== 'camera') return;
         checking = true;
         try {
           const faceN = await cqFacetec.detectFaceCount(cap.video);
@@ -891,35 +904,54 @@
     const ENROLL_ERRORS = {
       'no-face-detected': 'NO FACE DETECTED — TRY BETTER LIGHTING',
       'too-many-faces':   'MULTIPLE FACES — STEP AWAY',
+      'multiple-faces':   'MULTIPLE FACES — STEP AWAY',
       'eyes-obstructed':  'EYES OBSTRUCTED — REMOVE GLASSES / HAT',
       'mouth-obstructed': 'MOUTH OBSTRUCTED — REMOVE MASK',
       'face-too-small':   'MOVE CLOSER TO THE CAMERA',
       'face-off-center':  'CENTER YOUR FACE',
-      'server-error':     'VERIFY SERVER UNREACHABLE — RETRY',
+      'server-error':     'VERIFY SERVER UNREACHABLE — TAP TO RETRY',
+      'network-error':    'NETWORK ERROR — TAP TO RETRY',
+      'no-photo':         'CAPTURE FAILED — TAP TO RETRY',
     };
 
     cap.capture.addEventListener('click', async () => {
-      if (!capFaceReady || capMode !== 'camera') return;
+      if (capBusy || !capFaceReady || capMode !== 'camera') return;
+      capBusy = true;
       cap.capture.disabled = true;
       cap.status.textContent = 'CHECKING PHOTO…';
       cap.status.className = 'viewfinder-status is-verifying';
       cap.viewfinder.className = 'viewfinder is-verifying';
-      // 720px tight crop around the face — reliable input for server-side
-      // feature extraction (same size cqEnroll uses).
-      const frame = await cqFacetec.captureAroundFace(cap.video, 720);
-      const verdict = await cqFacetec.verifyEnrollmentPhoto(frame);
-      if (!verdict.ok) {
-        const msg = ENROLL_ERRORS[verdict.reason] || 'PHOTO REJECTED — TRY AGAIN';
+      // Hard upper bound on the whole capture+verify path so a hung
+      // server / detector can never freeze the UI. cqEnroll relies on
+      // verifyEnrollmentPhoto's own 18s timeout, but here we wrap the
+      // full chain in a 12s budget AND a fall-through so the user
+      // always gets a re-armed button.
+      let verdict = null;
+      let frame = null;
+      try {
+        const work = (async () => {
+          frame = await cqFacetec.captureAroundFace(cap.video, 720);
+          return cqFacetec.verifyEnrollmentPhoto(frame);
+        })();
+        verdict = await Promise.race([
+          work,
+          new Promise(r => setTimeout(() => r({ ok: false, reason: 'timeout' }), 14000)),
+        ]);
+      } catch (e) {
+        verdict = { ok: false, reason: 'network-error', error: String(e) };
+      }
+      capBusy = false;
+      if (!verdict || !verdict.ok) {
+        const reason = verdict && verdict.reason;
+        const msg = ENROLL_ERRORS[reason] || (reason === 'timeout' ? 'VERIFY TIMED OUT — TAP TO RETRY' : 'PHOTO REJECTED — TAP TO RETRY');
+        try { console.warn('[setup] enrollment verify failed', verdict); } catch {}
         cap.status.textContent = msg;
         cap.status.className = 'viewfinder-status is-denied';
         cap.viewfinder.className = 'viewfinder is-denied';
-        // Brief hold on the error then re-arm so the auto-detect loop
-        // re-enables Capture as soon as a clean face is back in frame.
-        setTimeout(() => {
-          cap.status.textContent = 'CENTER FACE THEN TAP CAPTURE';
-          cap.status.className = 'viewfinder-status is-verifying';
-          cap.viewfinder.className = 'viewfinder is-verifying';
-        }, 1800);
+        // Immediately re-enable the Capture button so the user can retry
+        // without waiting for the detect loop to come back around. The
+        // loop will overwrite status+vf classes within ~700ms anyway.
+        cap.capture.disabled = !capFaceReady;
         return;
       }
       capFrame = frame;
