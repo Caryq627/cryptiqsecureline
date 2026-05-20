@@ -111,19 +111,28 @@
         headline: 'Capture your face',
         sub:      'Take a photo or upload one. This is your reference for the line.',
         cancelText: 'Cancel',
-        onCaptured: (photo) => livenessStep(name, photo),
+        onCaptured: (photo, meta) => {
+          // Live camera capture is already proof of liveness — the user
+          // just looked into the lens. Skip the extra face-gate and
+          // open the line directly. Uploads need the gate.
+          if (meta && meta.source === 'camera') {
+            createLine(name, photo);
+          } else {
+            livenessStep(name, photo);
+          }
+        },
         onCancel:   () => { startBtn.disabled = false; },
       });
     });
 
     function livenessStep(name, photo) {
-      // Step 2: prove the captured face is live + matches itself. Same
-      // pattern as the Try Demo flow on the home page — proven reliable.
+      // Upload path: prove the uploaded face is live + matches itself.
+      // Same pattern as the Try Demo flow on the home page.
       const firstName = name.split(/\s+/)[0];
       cqFaceGate.verify({
         refPhoto:  photo,
         headline:  `Verify it's you, ${firstName}`,
-        sub:       'Live face check before the line opens.',
+        sub:       'Live face check against the photo you just uploaded.',
         cancelText: 'Cancel',
         onVerified: () => createLine(name, photo),
         onCancel:   () => { startBtn.disabled = false; },

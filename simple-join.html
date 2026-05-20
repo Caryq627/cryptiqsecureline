@@ -173,7 +173,17 @@
         headline: 'Capture your face',
         sub:      'Take a photo or upload one. This is what the host sees.',
         cancelText: 'Cancel',
-        onCaptured: (photo) => livenessStep(name, photo),
+        onCaptured: (photo, meta) => {
+          // Live camera capture proves liveness by definition — the
+          // user just stared into the lens. Skip the redundant face-gate
+          // and submit straight away. Upload mode is a static file, so
+          // we still face-gate it before sending.
+          if (meta && meta.source === 'camera') {
+            submitRequest(name, photo);
+          } else {
+            livenessStep(name, photo);
+          }
+        },
         onCancel:   () => { requestBtn.disabled = false; },
       });
     });
@@ -183,7 +193,7 @@
       cqFaceGate.verify({
         refPhoto:  photo,
         headline:  `Verify it's you, ${firstName}`,
-        sub:       'Live face check before requesting entry.',
+        sub:       'Live face check against the photo you just uploaded.',
         cancelText: 'Cancel',
         onVerified: () => submitRequest(name, photo),
         onCancel:   () => { requestBtn.disabled = false; },

@@ -40,6 +40,32 @@
       font-size: 13px;
       letter-spacing: 0.12em;
     }
+
+    /* Top-centered LookAway-style mini viewfinder. Overrides the default
+       bottom-right position from .self-preview. Smaller (88px) so it
+       sits unobtrusively above the tile grid. */
+    .self-preview.is-top {
+      top: 64px;
+      bottom: auto;
+      right: auto;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 88px;
+      height: 88px;
+    }
+    .self-preview.is-top .label {
+      bottom: 10px;
+      font-size: 7px;
+      letter-spacing: 0.16em;
+    }
+    @media (max-width: 640px) {
+      .self-preview.is-top {
+        top: 56px;
+        width: 72px;
+        height: 72px;
+      }
+      .self-preview.is-top .label { font-size: 6.5px; bottom: 8px; }
+    }
   </style>
 </head>
 <body>
@@ -79,6 +105,14 @@
     <div id="share-slot"></div>
     <div id="admit-slot"></div>
 
+    <!-- LookAway-style top-centered self viewfinder. Continuous FaceTec
+         2D liveness runs on this video element while the call is open.
+         Hidden until the camera + first liveness tick succeed. -->
+    <div class="self-preview is-top" id="self-preview" style="display:none;">
+      <video id="self-video" autoplay playsinline muted></video>
+      <div class="label" id="self-label">VERIFYING</div>
+    </div>
+
     <main class="tile-grid" id="tile-grid" aria-live="polite"></main>
 
     <footer class="call-controls">
@@ -86,7 +120,7 @@
         <span data-icon="mic"></span>
       </button>
       <button class="btn-icon is-danger" id="leave-btn" title="Leave" aria-label="Leave">
-        <span data-icon="phoneOff"></span>
+        <span data-icon="logout"></span>
       </button>
     </footer>
   </div>
@@ -235,15 +269,35 @@
       document.getElementById('line-clock').textContent = `${mm}:${ss}`;
     }, 1000);
 
-    // ---------- microphone ----------
-    let selfStream = null;
+    // ---------- microphone + camera + active monitoring ----------
+    let selfStream = null;     // full mic + camera MediaStream
+    let audioOnlyStream = null;// derivative — what the WebRTC mesh sends
     let voiceRoom = null;
     let stopVad = null;
-    const myLocal = { muted: false, speaking: false };
+    let stopLiveness = null;
+    const myLocal = { muted: false, speaking: false, liveness: 'verifying' };
     const micBtn  = document.getElementById('mic-btn');
+    const selfPreview = document.getElementById('self-preview');
+    const selfVideo   = document.getElementById('self-video');
+    const selfLabel   = document.getElementById('self-label');
+
+    const setSelfPreviewState = (state) => {
+      selfPreview.classList.remove('state-verified','state-away','state-intruder','state-verifying','state-held');
+      selfPreview.classList.add('state-' + state);
+      selfLabel.textContent = ({
+        verified:  'VERIFIED',
+        verifying: 'VERIFYING…',
+        away:      'AWAY',
+        intruder:  'INTRUDER',
+        held:      'ON HOLD',
+      })[state] || state.toUpperCase();
+    };
 
     const setMic = (muted) => {
       myLocal.muted = !!muted;
+      if (audioOnlyStream) {
+        audioOnlyStream.getAudioTracks().forEach(t => { t.enabled = !muted; });
+      }
       if (selfStream) {
         selfStream.getAudioTracks().forEach(t => { t.enabled = !muted; });
       }
@@ -251,23 +305,40 @@
       micBtn.classList.toggle('is-active', !muted);
       micBtn.firstElementChild.innerHTML = muted ? cqIcons.micOff : cqIcons.mic;
       const t = tilesById.get(mePid);
-      if (t) setTileState(mePid, t.state === 'away' ? 'verified' : t.state, { muted });
+      if (t) setTileState(mePid, myLocal.liveness, { muted, speaking: myLocal.speaking });
     };
 
     const startMicAndMesh = async () => {
+      // Open camera + mic together. The camera feed powers the
+      // top-centered viewfinder + continuous FaceTec 2D liveness loop.
+      // The WebRTC mesh receives an AUDIO-ONLY derivative — we never
+      // ship video frames to peers (voice-only call).
       try {
-        selfStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        selfStream = await cqFacetec.openCamera(selfVideo, { audio: true });
       } catch (e) {
-        console.warn('[room] mic denied / unavailable', e);
-        return;
+        console.warn('[room] camera/mic denied', e);
+        // Mic-only fallback: still join the voice mesh, skip monitoring.
+        try {
+          selfStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e2) {
+          console.warn('[room] mic also denied', e2);
+          return;
+        }
       }
-      // VAD drives the speaking-glow.
+      // Audio-only stream for the mesh, so video never leaves this device.
+      audioOnlyStream = new MediaStream(selfStream.getAudioTracks());
+
+      // Voice-activity detection drives the speaking-glow on the tile.
       if (stopVad) { try { stopVad(); } catch {} stopVad = null; }
-      stopVad = cqFacetec.startVoiceActivity(selfStream, (speaking) => {
-        myLocal.speaking = speaking && !myLocal.muted;
-        const t = tilesById.get(mePid);
-        if (t) setTileState(mePid, 'verified', { muted: myLocal.muted, speaking: myLocal.speaking });
+      stopVad = cqFacetec.startVoiceActivity(audioOnlyStream, (speaking) => {
+        const wasSpeaking = myLocal.speaking;
+        myLocal.speaking = speaking && !myLocal.muted && myLocal.liveness === 'verified';
+        if (wasSpeaking !== myLocal.speaking) {
+          const t = tilesById.get(mePid);
+          if (t) setTileState(mePid, myLocal.liveness, { muted: myLocal.muted, speaking: myLocal.speaking });
+        }
       });
+
       // WebRTC mesh — direct peer audio between every live participant.
       if (voiceRoom) { try { voiceRoom.close(); } catch {} voiceRoom = null; }
       if (window.cqVoice) {
@@ -285,7 +356,34 @@
           }
           return out;
         };
-        voiceRoom = cqVoice.createRoom({ lineId: lineCode, mePid, localStream: selfStream, peerPids });
+        voiceRoom = cqVoice.createRoom({ lineId: lineCode, mePid, localStream: audioOnlyStream, peerPids });
+      }
+
+      // Active monitoring — only when we actually have a video track to
+      // monitor. cqFacetec.startContinuousLiveness ticks every ~1.8s,
+      // round-trips each frame through the FaceTec /liveness-2d endpoint,
+      // and emits one of: 'verifying' | 'verified' | 'away' | 'intruder'.
+      if (selfStream.getVideoTracks && selfStream.getVideoTracks().length) {
+        selfPreview.style.display = '';
+        setSelfPreviewState('verifying');
+        const ref = (me && me.photo) || null;
+        if (stopLiveness) { try { stopLiveness(); } catch {} stopLiveness = null; }
+        stopLiveness = cqFacetec.startContinuousLiveness(selfVideo, {
+          refPhoto: ref,
+          cb: (state /* , meta */) => {
+            const next = (state === 'verified' || state === 'away' || state === 'intruder')
+              ? state
+              : 'verifying';
+            myLocal.liveness = next;
+            setSelfPreviewState(next);
+            // Reflect on our own tile + propagate via the next ping.
+            const t = tilesById.get(mePid);
+            if (t) setTileState(mePid, next === 'verifying' ? 'verified' : next, {
+              muted: myLocal.muted,
+              speaking: myLocal.speaking && next === 'verified',
+            });
+          },
+        });
       }
     };
 
@@ -466,10 +564,16 @@
       else lineNameEl.textContent = line.name;
     }, { intervalMs: 2000 });
 
-    // Presence ping every 2s with our tile state.
+    // Presence ping every 2s with our real tile state, including the
+    // FaceTec-driven liveness verdict so other devices see us as
+    // verified / away / intruder in sync.
     const pingTimer = setInterval(() => {
+      const state =
+        myLocal.liveness === 'intruder' ? 'intruder' :
+        myLocal.liveness === 'away'     ? 'away'     :
+                                          'verified';
       cqCloud.ping(lineCode, mePid, {
-        state: 'verified',
+        state,
         muted: !!myLocal.muted,
         speaking: !!myLocal.speaking,
         handRaised: false,
@@ -509,6 +613,7 @@
       try { clearInterval(pingTimer); } catch {}
       try { voiceRoom && voiceRoom.close(); } catch {}
       try { stopVad && stopVad(); } catch {}
+      try { stopLiveness && stopLiveness(); } catch {}
       try {
         if (selfStream) selfStream.getTracks().forEach(t => t.stop());
       } catch {}

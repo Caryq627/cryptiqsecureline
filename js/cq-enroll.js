@@ -254,7 +254,11 @@
       setVfClass(camVf, 'is-verified');
       setTimeout(() => {
         cleanup();
-        if (typeof onCaptured === 'function') onCaptured(frame);
+        // Pass the source so callers can decide whether a follow-up
+        // liveness check is needed. Live camera capture proves liveness
+        // by definition — the user just looked into the lens. Uploads
+        // are a static file and DO still need a face-gate.
+        if (typeof onCaptured === 'function') onCaptured(frame, { source: 'camera' });
       }, 360);
     });
 
@@ -340,7 +344,7 @@
         if (!upImg.classList.contains('is-loaded')) return;
         if (gen !== revalidateGen) return;
         cleanup();
-        if (typeof onCaptured === 'function') onCaptured(cropped);
+        if (typeof onCaptured === 'function') onCaptured(cropped, { source: 'upload' });
       }, 900);
     };
 
