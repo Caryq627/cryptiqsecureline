@@ -1013,6 +1013,7 @@ textarea::placeholder {
   box-shadow: 0 0 18px var(--accent);
   opacity: 0;
   pointer-events: none;
+  z-index: 0;       /* sit BEHIND the avatar so the moving line can't cut the avatar's rounded top */
 }
 
 .tile .avatar {
@@ -1026,6 +1027,7 @@ textarea::placeholder {
   border: 2px solid var(--accent-line);
   box-shadow: 0 0 24px rgba(46,196,182,0.18);
   position: relative;
+  z-index: 2;                      /* above .tile-scanline so the moving line draws behind */
   transition: border-color 0.3s ease, box-shadow 0.4s ease;
   overflow: hidden;
 }

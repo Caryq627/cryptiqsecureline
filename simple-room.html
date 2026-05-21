@@ -395,20 +395,29 @@
     const openTileMenu = (tileEl, pid) => {
       // Close any other open menu.
       document.querySelectorAll('.tile-menu-pop').forEach(p => p.remove());
+      const target = (line && line.participants || []).find(p => p.id === pid);
+      const name = target ? target.name : 'this person';
+      const alreadyMuted = !!(line && line.forceMuted && line.forceMuted[pid]);
       const pop = document.createElement('div');
       pop.className = 'tile-menu-pop';
       pop.innerHTML = `
         <button data-action="make-host" type="button">
           <span data-icon="userCheck"></span> Make host
         </button>
+        <button data-action="toggle-mute" type="button">
+          <span data-icon="${alreadyMuted ? 'mic' : 'micOff'}"></span>
+          ${alreadyMuted ? 'Unmute' : 'Mute mic'}
+        </button>
+        <button data-action="kick" type="button" style="color: var(--danger);">
+          <span data-icon="logout"></span> Remove &amp; block
+        </button>
       `;
       tileEl.appendChild(pop);
       cqIconsHydrate(pop);
+
       pop.querySelector('[data-action="make-host"]').addEventListener('click', async (e) => {
         e.stopPropagation();
         pop.remove();
-        const target = (line && line.participants || []).find(p => p.id === pid);
-        const name = target ? target.name : 'this person';
         if (!confirm(`Make ${name} the host? You'll lose host controls.`)) return;
         const r = await cqCloud.transferHost(lineCode, mePid, pid, hostToken);
         if (r && r.ok && r.line) {
@@ -419,6 +428,36 @@
           banner(`Host transferred to ${name}. You're now a guest.`);
         } else {
           banner('Transfer failed: ' + (r && r.reason || 'unknown'), 'warn');
+        }
+      });
+
+      pop.querySelector('[data-action="toggle-mute"]').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        pop.remove();
+        const wantMute = !alreadyMuted;
+        const r = await cqCloud.muteParticipant(lineCode, pid, wantMute, hostToken, mePid);
+        if (r && r.ok && r.line) {
+          line = r.line;
+          renderAdmit();
+          banner(wantMute ? `Muted ${name}` : `Unmuted ${name}`);
+        } else {
+          banner((wantMute ? 'Mute' : 'Unmute') + ' failed: ' + (r && r.reason || 'unknown'), 'warn');
+        }
+      });
+
+      pop.querySelector('[data-action="kick"]').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        pop.remove();
+        if (!confirm(`Remove ${name} from the call and block them from re-entering with the same face?`)) return;
+        const r = await cqCloud.kickParticipant(lineCode, pid, hostToken, mePid);
+        if (r && r.ok && r.line) {
+          line = r.line;
+          reconcileTiles();
+          applyRemoteLiveStates();
+          renderAdmit();
+          banner(`Removed ${name} and added to block list`);
+        } else {
+          banner('Remove failed: ' + (r && r.reason || 'unknown'), 'warn');
         }
       });
     };
@@ -937,12 +976,43 @@
       return remote;
     };
 
+    // If the host force-muted us, auto-apply locally + show a banner.
+    // Stays mic-on if the host then un-mutes us (forceMuted[mePid] is
+    // cleared on the server side).
+    let lastForceMuteApplied = false;
+    const applyForceMute = (remote) => {
+      const wantMute = !!(remote && remote.forceMuted && remote.forceMuted[mePid]);
+      if (wantMute && !myLocal.muted) {
+        setMic(true);
+        banner('Host muted your mic', 'warn');
+      } else if (!wantMute && lastForceMuteApplied && myLocal.muted) {
+        // Host just removed the force-mute. Don't auto-unmute (the
+        // user may have muted themselves separately) — but surface
+        // that they're free to unmute.
+        banner('Host unmuted you — tap mic to speak');
+      }
+      lastForceMuteApplied = wantMute;
+    };
+
     const stopSync = cqCloud.startSync(lineCode, (remote) => {
       remote = stripInflightActedPending(remote);
       line = remote;
       // Check for host-ended state BEFORE doing anything else — if the
       // host left, we want to navigate home, not render a stale roster.
       if (remote.endedAt) { handleLineEnded(remote); return; }
+      applyForceMute(remote);
+      // Were WE kicked? If our pid disappeared from participants
+      // (host removed us), bail to home with a clear message.
+      const meStillThere = (remote.participants || []).some(p => p.id === mePid);
+      if (!meStillThere && !cleanedUp) {
+        banner('You were removed from the call', 'danger');
+        setTimeout(() => {
+          cleanup();
+          try { sessionStorage.removeItem('cq.simple.session'); } catch {}
+          location.replace('/?skipIntro=1');
+        }, 1500);
+        return;
+      }
       // Diagnostic: surface admit-relevant state on every sync tick so
       // a "request was sent but I never saw it" report can be debugged
       // from DevTools without redeploying.
@@ -1003,6 +1073,20 @@
         line = stripInflightActedPending(r.line);
         // Host ended the call? Bail before any rendering.
         if (r.line.endedAt) { handleLineEnded(r.line); return; }
+        // Force-mute + kicked checks — redundant with startSync, but
+        // ensures these reach the target within one poll cycle even
+        // if startSync's snapshot diff happens to skip a tick.
+        applyForceMute(r.line);
+        const meStillThere = (r.line.participants || []).some(p => p.id === mePid);
+        if (!meStillThere && !cleanedUp) {
+          banner('You were removed from the call', 'danger');
+          setTimeout(() => {
+            cleanup();
+            try { sessionStorage.removeItem('cq.simple.session'); } catch {}
+            location.replace('/?skipIntro=1');
+          }, 1500);
+          return;
+        }
         const newPending = (r.line.pending || []).filter(p => p.status === 'pending').length;
         if (newPending !== prevPending) {
           try {

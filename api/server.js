@@ -203,6 +203,75 @@ app.post('/api/line/:id/transfer-host', (req, res) => {
   res.json({ ok: true, line: sanitize(line) });
 });
 
+// Host force-mutes (or unmutes) another participant. Stored on the
+// line as forceMuted[pid] = true/false; the target's poll picks it
+// up and calls setMic(true) locally on the next tick.
+app.post('/api/line/:id/mute', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  const { targetPid, mute, hostToken, callerParticipantId } = req.body || {};
+  if (!isHostCaller(line, { hostToken, callerParticipantId })) {
+    return res.status(403).json({ ok: false, reason: 'not-host' });
+  }
+  if (!targetPid) return res.status(400).json({ ok: false, reason: 'no-target' });
+  if (!line.forceMuted) line.forceMuted = {};
+  if (mute) line.forceMuted[targetPid] = true;
+  else delete line.forceMuted[targetPid];
+  touch(req.params.id);
+  console.log('[srv] /mute', { lineId: req.params.id, targetPid, mute: !!mute });
+  res.json({ ok: true, line: sanitize(line) });
+});
+
+// Host removes a participant and blocks them from re-entering. The
+// block is keyed by a hash of their reference photo — if they hit
+// /pending again with the same photo, the request is rejected. Photo
+// hash is a cheap FNV-1a of the dataURL base64 body (server-side, so
+// the client can't trivially evade by tweaking metadata).
+const fnv1a = (s) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(16);
+};
+const photoHash = (photoDataUrl) => {
+  if (!photoDataUrl || typeof photoDataUrl !== 'string') return null;
+  const comma = photoDataUrl.indexOf(',');
+  const body = comma >= 0 ? photoDataUrl.slice(comma + 1) : photoDataUrl;
+  return fnv1a(body);
+};
+
+app.post('/api/line/:id/kick', (req, res) => {
+  const line = getLine(req.params.id);
+  if (!line) return res.status(404).json({ ok: false, reason: 'not-found' });
+  const { targetPid, hostToken, callerParticipantId } = req.body || {};
+  if (!isHostCaller(line, { hostToken, callerParticipantId })) {
+    return res.status(403).json({ ok: false, reason: 'not-host' });
+  }
+  if (!targetPid) return res.status(400).json({ ok: false, reason: 'no-target' });
+  // Can't kick the host (themselves or transferred host).
+  if (line.createdBy === targetPid) {
+    return res.status(400).json({ ok: false, reason: 'cant-kick-host' });
+  }
+  // Find their photo BEFORE removing, so we can block by photo hash.
+  const target = Array.isArray(line.participants) ? line.participants.find(p => p.id === targetPid) : null;
+  const hash = target && photoHash(target.photo);
+  if (hash) {
+    if (!Array.isArray(line.blockedPhotoHashes)) line.blockedPhotoHashes = [];
+    if (!line.blockedPhotoHashes.includes(hash)) line.blockedPhotoHashes.push(hash);
+  }
+  // Remove from participants + live + any force-mute flag.
+  if (Array.isArray(line.participants)) {
+    line.participants = line.participants.filter(p => p.id !== targetPid);
+  }
+  if (line.live) delete line.live[targetPid];
+  if (line.forceMuted) delete line.forceMuted[targetPid];
+  touch(req.params.id);
+  console.log('[srv] /kick', { lineId: req.params.id, targetPid, blockedHash: hash });
+  res.json({ ok: true, line: sanitize(line) });
+});
+
 // Guest submits a join request (open-link flow).
 //
 // Two acceptance modes:
@@ -222,6 +291,15 @@ app.post('/api/line/:id/pending', (req, res) => {
     if (!line.openToken || line.openToken !== openToken) {
       console.log('[srv] /pending 403 — invalid token', req.params.id, 'policy=', line.joinPolicy);
       return res.status(403).json({ ok: false, reason: 'invalid-token' });
+    }
+  }
+  // Block: a previously-kicked user can't re-submit using the same
+  // photo. Hash matched against line.blockedPhotoHashes.
+  if (Array.isArray(line.blockedPhotoHashes) && line.blockedPhotoHashes.length && photo) {
+    const h = photoHash(photo);
+    if (h && line.blockedPhotoHashes.includes(h)) {
+      console.log('[srv] /pending 403 — blocked photo', req.params.id, h);
+      return res.status(403).json({ ok: false, reason: 'blocked' });
     }
   }
   if (!Array.isArray(line.pending)) line.pending = [];

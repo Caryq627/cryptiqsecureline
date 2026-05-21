@@ -130,6 +130,24 @@
       timeoutMs: WRITE_TIMEOUT_MS,
     });
 
+  // Host force-mutes / unmutes a participant. Target's poll picks up
+  // line.forceMuted[targetPid] and auto-calls setMic(true).
+  const muteParticipant = (lineId, targetPid, mute, hostToken, callerParticipantId) =>
+    req(`/api/line/${encodeURIComponent(lineId)}/mute`, {
+      method: 'POST',
+      body: { targetPid, mute, hostToken, callerParticipantId },
+      timeoutMs: WRITE_TIMEOUT_MS,
+    });
+
+  // Host removes a participant and blocks them (by photo hash) from
+  // submitting another /pending with the same face.
+  const kickParticipant = (lineId, targetPid, hostToken, callerParticipantId) =>
+    req(`/api/line/${encodeURIComponent(lineId)}/kick`, {
+      method: 'POST',
+      body: { targetPid, hostToken, callerParticipantId },
+      timeoutMs: WRITE_TIMEOUT_MS,
+    });
+
   // Simple-flow: host POSTs name + photo once, gets a short shareable
   // code, their participantId, and a hostToken to authorize admit/deny.
   const simpleStart = (name, photo) =>
@@ -278,6 +296,8 @@
     clearSession,
     simpleStart,
     transferHost,
+    muteParticipant,
+    kickParticipant,
     leave,
     ping,
     signal,
