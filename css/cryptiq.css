@@ -1019,13 +1019,15 @@ textarea::placeholder {
   width: 96px; height: 96px;
   border-radius: 50%;
   margin: 0 auto 14px;
-  background: var(--bg-soft);
-  background-size: cover;
+  background-color: var(--bg-deep);
+  background-size: contain;        /* contain (was cover): show the whole photo */
+  background-repeat: no-repeat;    /* so the photo doesn't tile inside the circle */
   background-position: center;
   border: 2px solid var(--accent-line);
   box-shadow: 0 0 24px rgba(46,196,182,0.18);
   position: relative;
   transition: border-color 0.3s ease, box-shadow 0.4s ease;
+  overflow: hidden;
 }
 
 .tile .avatar::after {
