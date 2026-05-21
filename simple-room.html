@@ -755,6 +755,14 @@
     const admitSlot = document.getElementById('admit-slot');
     const alertedPendingIds = new Set();
 
+    // Pending ids the host has CLICKED admit/deny on, where the server
+    // hasn't confirmed yet. The admit-poll filters these out of the
+    // incoming line.pending so a slow cold-start response can't undo
+    // the optimistic clear and bring a "ghost" pending strip back. On
+    // server confirmation we clear the id. On failure we keep the id
+    // for one more tick so the renderAdmit revert can land — then drop.
+    const inflightActedPendingIds = new Set();
+
     let audioCtx = null;
     const playJoinChime = () => {
       try {
@@ -847,9 +855,11 @@
 
       admitBtn.addEventListener('click', async () => {
         admitBtn.disabled = true; denyBtn.disabled = true;
-        // Snapshot so we can revert on server failure. Optimistic drop
-        // makes the strip clear immediately; if the request fails, we
-        // restore so the host can try again.
+        // Mark this pendingId as in-flight so the parallel admit-poll
+        // can't restore it from a slow server fetch (the race that
+        // produced the "strip flickers in and out" UX). Snapshot so we
+        // can revert on actual server failure.
+        inflightActedPendingIds.add(entry.id);
         const savedPending = (line && line.pending) ? line.pending.slice() : [];
         if (line && Array.isArray(line.pending)) {
           line.pending = line.pending.filter(p => p.id !== entry.id);
@@ -860,26 +870,36 @@
         const r = await cqCloud.admit(lineCode, entry.id, hostToken, mePid);
         if (r && r.ok && r.line) {
           line = r.line;
+          // Server confirmed — keep the in-flight mark for one more
+          // tick so any IN-FLIGHT poll request (that snapshotted the
+          // pre-admit state) doesn't paint it back on arrival. Then
+          // clear so reconcile sees normal state.
+          setTimeout(() => inflightActedPendingIds.delete(entry.id), 2500);
           reconcileTiles();
           renderAdmit();
         } else {
-          // Restore the pending so the host can retry.
+          // Server failed — drop the in-flight mark so the restored
+          // pending shows up again, and revert.
+          inflightActedPendingIds.delete(entry.id);
           if (line) line.pending = savedPending;
           renderAdmit();
           const reason = (r && r.reason) || 'unknown';
           banner(`Admit failed (${reason}) — tap Admit again`, 'warn');
-          // Re-enable buttons via the next renderAdmit.
         }
       });
       denyBtn.addEventListener('click', async () => {
         admitBtn.disabled = true; denyBtn.disabled = true;
+        inflightActedPendingIds.add(entry.id);
         const savedPending = (line && line.pending) ? line.pending.slice() : [];
         if (line && Array.isArray(line.pending)) {
           line.pending = line.pending.filter(p => p.id !== entry.id);
         }
         renderAdmit();
         const r = await cqCloud.deny(lineCode, entry.id, hostToken, mePid);
-        if (!r || !r.ok) {
+        if (r && r.ok) {
+          setTimeout(() => inflightActedPendingIds.delete(entry.id), 2500);
+        } else {
+          inflightActedPendingIds.delete(entry.id);
           if (line) line.pending = savedPending;
           renderAdmit();
           banner('Deny failed — try again', 'warn');
@@ -906,7 +926,19 @@
       }
     };
 
+    // Strip pendingIds the host has already acted on (admit/deny) but
+    // the server's response hasn't landed yet. Without this, a poll
+    // that started before the admit/deny RPC happens to land after it
+    // sees the (still-pending) server state and undoes the host's
+    // optimistic clear — the admit strip flickers back in.
+    const stripInflightActedPending = (remote) => {
+      if (!remote || !Array.isArray(remote.pending) || !inflightActedPendingIds.size) return remote;
+      remote.pending = remote.pending.filter(p => !inflightActedPendingIds.has(p.id));
+      return remote;
+    };
+
     const stopSync = cqCloud.startSync(lineCode, (remote) => {
+      remote = stripInflightActedPending(remote);
       line = remote;
       // Check for host-ended state BEFORE doing anything else — if the
       // host left, we want to navigate home, not render a stale roster.
@@ -967,7 +999,8 @@
         const prevPending = Array.isArray(line && line.pending)
           ? line.pending.filter(p => p.status === 'pending').length
           : 0;
-        line = r.line;
+        // Strip in-flight admits/denies — same race-avoidance as startSync.
+        line = stripInflightActedPending(r.line);
         // Host ended the call? Bail before any rendering.
         if (r.line.endedAt) { handleLineEnded(r.line); return; }
         const newPending = (r.line.pending || []).filter(p => p.status === 'pending').length;

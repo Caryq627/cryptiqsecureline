@@ -16,9 +16,24 @@
 // auto-pairs with everyone already present.
 
 (function (root) {
+  // ICE servers: Google's public STUN handles ~80% of NATs; openrelay
+  // provides a FREE public TURN (UDP + TCP + TLS) for the symmetric-NAT
+  // pairs that STUN alone can't traverse — corporate VPNs, carrier-
+  // grade NATs, some mobile networks. Without TURN those peers
+  // silently fail to connect and the call has no audio even though
+  // the UI looks fine. Credentials come from openrelayproject.org.
   const STUN_ICE = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ];
 
   // createRoom — returns a controller with .close(). Pass:
@@ -103,12 +118,16 @@
       };
 
       pc.onconnectionstatechange = () => {
+        try { console.log('[cqVoice] peer', peerPid, 'connection', pc.connectionState); } catch {}
         if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
           // Drop so the next reconcile re-creates the PC.
           if (pcs.get(peerPid) === pc) pcs.delete(peerPid);
           const a = audioEls.get(peerPid);
           if (a) { a.remove(); audioEls.delete(peerPid); }
         }
+      };
+      pc.oniceconnectionstatechange = () => {
+        try { console.log('[cqVoice] peer', peerPid, 'ice', pc.iceConnectionState); } catch {}
       };
 
       pc.onnegotiationneeded = async () => {
